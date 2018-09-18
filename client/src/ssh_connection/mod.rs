@@ -1,5 +1,5 @@
 use ::std;
-use ::std::process::Command;
+use ::std::process::{Command, Stdio};
 use ::futures::stream::Stream;
 use ::futures::Future;
 use ::futures::Poll;
@@ -14,13 +14,15 @@ use ::std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct SshConnection {
     disconnect: Arc<AtomicBool>,
+    failures: usize,
     state: SshConnectionState,
 }
 
 impl SshConnection {
-    pub fn new() -> impl Stream<Item=SshConnectionChange, Error=()> {
+    pub fn new() -> SshConnection {
         SshConnection {
             disconnect: Arc::new(AtomicBool::new(false)),
+            failures: 0,
             state: SshConnectionState::Requested,
         }
     }
@@ -37,14 +39,20 @@ pub struct SshConnectionHandle {
     disconnect: Arc<AtomicBool>,
 }
 
+impl SshConnectionHandle {
+    pub fn disconnect(&self) {
+        self.disconnect.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Public-facing connection change events
 #[derive(Debug, Eq, PartialEq)]
 pub enum SshConnectionChange {
     Connecting,
     Connected,
-    _Disconnecting,
-    _Disconnected,
-    Failed,
+    Disconnecting,
+    Disconnected,
+    Failed(usize),
 }
 
 /// Internal connection state. These seem to duplicate the public-facing change events, but contain
@@ -54,8 +62,8 @@ enum SshConnectionState {
     Connecting(Connect),
     Connected(Delay),
     Checking(Check),
-    _Disconnecting,
-    _Disconnected,
+    Disconnecting(Disconnect),
+    Disconnected,
     Failed(Delay),
 }
 
@@ -68,24 +76,27 @@ impl Stream for SshConnection {
 
         loop {
             let state = std::mem::replace(&mut self.state, Requested);
+            let disconnecting = self.disconnect.load(Ordering::Relaxed);
 
-            match state {
-                Requested => {
+            match (disconnecting, state) {
+                (false, Requested) => {
                     self.state = Connecting(Connect::new());
                     return Ok(Async::Ready(Some(SshConnectionChange::Connecting)))
                 },
-                Connecting(mut delay) => {
+                (false, Connecting(mut delay)) => {
                     match delay.poll().map_err(|_| ())? {
                         Async::Ready(result) => {
                             if result {
                                 let instant = Instant::now() + Duration::from_millis(10_000);
+                                self.failures = 0;
                                 self.state = Connected(Delay::new(instant));
                                 return Ok(Async::Ready(Some(SshConnectionChange::Connected)));
                             }
                             else {
-                                let instant = Instant::now() + Duration::from_millis(1_000);
+                                self.failures += 1;
+                                let instant = Instant::now() + Duration::from_millis(self.failures as u64 * 1_000);
                                 self.state = Failed(Delay::new(instant));
-                                return Ok(Async::Ready(Some(SshConnectionChange::Failed)));
+                                return Ok(Async::Ready(Some(SshConnectionChange::Failed(self.failures))));
                             }
                         },
                         Async::NotReady => {
@@ -94,7 +105,7 @@ impl Stream for SshConnection {
                         }
                     }
                 },
-                Connected(mut delay) => {
+                (false, Connected(mut delay)) => {
                     match delay.poll().map_err(|_| ())? {
                         Async::Ready(_) => {
                             self.state = Checking(Check::new());
@@ -105,29 +116,31 @@ impl Stream for SshConnection {
                         }
                     }
                 },
-                Checking(mut delay) => {
-                    match delay.poll().map_err(|_| ())? {
+                (false, Checking(mut future)) => {
+                    match future.poll().map_err(|_| ())? {
                         Async::Ready(result) => {
                             if result {
+                                self.failures = 0;
                                 let instant = Instant::now() + Duration::from_millis(10_000);
                                 self.state = Connected(Delay::new(instant));
                                 // TODO: We were already connected. Don't notify that again!
                                 // return Ok(Async::Ready(Some(SshConnectionChange::Connected)));
                             }
                             else {
-                                let instant = Instant::now() + Duration::from_millis(1_000);
+                                self.failures += 1;
+                                let instant = Instant::now() + Duration::from_millis(self.failures as u64 * 1_000);
                                 self.state = Failed(Delay::new(instant));
-                                return Ok(Async::Ready(Some(SshConnectionChange::Failed)));
+                                return Ok(Async::Ready(Some(SshConnectionChange::Failed(self.failures))));
                             }
                             // return Ok(Async::NotReady);
                         },
                         Async::NotReady => {
-                            self.state = Checking(delay);
+                            self.state = Checking(future);
                             return Ok(Async::NotReady);
                         }
                     }
                 },
-                Failed(mut delay) => {
+                (false, Failed(mut delay)) => {
                     match delay.poll().map_err(|_| ())? {
                         Async::Ready(_) => {
                             self.state = Connecting(Connect::new());
@@ -139,9 +152,25 @@ impl Stream for SshConnection {
                         }
                     }
                 }
-                _ => {
+                (_, Disconnecting(mut future)) => {
+                    match future.poll().map_err(|_| ())? {
+                        Async::Ready(_) => {
+                            self.state = Disconnected;
+                            return Ok(Async::Ready(Some(SshConnectionChange::Disconnected)));
+                        },
+                        Async::NotReady => {
+                            self.state = Disconnecting(future);
+                            return Ok(Async::NotReady);
+                        }
+                    }
+                },
+                (_, Disconnected) => {
                     return Ok(Async::Ready(None));
                 }
+                (true, _) => {
+                    self.state = Disconnecting(Disconnect::new());
+                    return Ok(Async::Ready(Some(SshConnectionChange::Disconnecting)));
+                },
             }
         }
     }
@@ -171,14 +200,19 @@ impl ConnectData {
     fn new() -> ConnectData {
         let f = poll_fn(move || {
             blocking(|| {
-                // Command::new("/bin/bash").args(&["-c", "echo 'checking for existing connection!' ; [ $RANDOM -lt 16383 ]"]).status().unwrap().success()
                 Command::new("ssh").args(&[
                                          "-O",
                                          "check",
                                          "-S",
                                          "/tmp/rssh-session-1",
                                          "bjb3@127.0.0.1",
-                ]).status().unwrap().success()
+                ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success()
             }).map_err(|_| panic!("the threadpool shut down"))
         });
 
@@ -188,7 +222,6 @@ impl ConnectData {
     fn new_connect() -> ConnectData {
         let f = poll_fn(move || {
             blocking(|| {
-                // Command::new("/bin/bash").args(&["-c", "echo 'connect command running!' ; [ $RANDOM -lt 16383 ]"]).status().unwrap().success()
                 Command::new("ssh").args(&[
                                          "-f",
                                          "-N",
@@ -197,8 +230,14 @@ impl ConnectData {
                                          "-M",
                                          "-S",
                                          "/tmp/rssh-session-1",
-                                         "bjb3@137.0.0.1",
-                ]).status().unwrap().success()
+                                         "bjb3@127.0.0.1",
+                ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success()
             }).map_err(|_| panic!("the threadpool shut down"))
         });
 
@@ -256,14 +295,19 @@ impl Check {
     fn new() -> Check {
         let f = poll_fn(move || {
             blocking(|| {
-                // Command::new("/bin/bash").args(&["-c", "echo 'check command running!' ; [ $RANDOM -lt 16383 ]"]).status().unwrap().success()
                 Command::new("ssh").args(&[
                                          "-O",
                                          "check",
                                          "-S",
                                          "/tmp/rssh-session-1",
                                          "bjb3@127.0.0.1",
-                ]).status().unwrap().success()
+                ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success()
             }).map_err(|_| panic!("the threadpool shut down"))
         });
 
@@ -274,6 +318,45 @@ impl Check {
 }
 
 impl Future for Check {
+    type Item = bool;
+    type Error = ();
+
+    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
+        self.future.poll()
+    }
+}
+
+struct Disconnect {
+    future: CommandFuture,
+}
+
+impl Disconnect {
+    fn new() -> Disconnect {
+        let f = poll_fn(move || {
+            blocking(|| {
+                Command::new("ssh").args(&[
+                                         "-O",
+                                         "exit",
+                                         "-S",
+                                         "/tmp/rssh-session-1",
+                                         "bjb3@127.0.0.1",
+                ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success()
+            }).map_err(|_| panic!("the threadpool shut down"))
+        });
+
+        Disconnect {
+            future: Box::new(f),
+        }
+    }
+}
+
+impl Future for Disconnect {
     type Item = bool;
     type Error = ();
 
