@@ -32,7 +32,7 @@ fn main() {
             });
 
         tokio::spawn(future);
-        
+
         let timeout_future = tokio_timer::Delay::new(::std::time::Instant::now() + ::std::time::Duration::from_millis(30_000))
             .and_then(move |_| {
                 println!("Disconnecting!");

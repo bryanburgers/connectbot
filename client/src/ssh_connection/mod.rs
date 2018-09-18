@@ -1,16 +1,20 @@
 use ::std;
-use ::std::process::{Command, Stdio};
 use ::futures::stream::Stream;
 use ::futures::Future;
 use ::futures::Poll;
 use ::futures::Async;
-use ::futures::future::poll_fn;
-use ::tokio_threadpool::blocking;
 use ::tokio_timer::Delay;
 use ::std::time::Instant;
 use ::std::time::Duration;
 use ::std::sync::Arc;
 use ::std::sync::atomic::{AtomicBool, Ordering};
+
+mod check;
+use self::check::Check;
+mod connect;
+use self::connect::Connect;
+mod disconnect;
+use self::disconnect::Disconnect;
 
 /// A stream that handles a "persistent" SSH connection.
 ///
@@ -22,9 +26,12 @@ use ::std::sync::atomic::{AtomicBool, Ordering};
 /// point it will attempt to disconnect the existing connection if necessary, and then end the
 /// stream.
 pub struct SshConnection {
+    /// Whether a disconnect has been requested.
     disconnect: Arc<AtomicBool>,
+    /// The number of consecutive failures, used for backoff
     failures: usize,
-    state: SshConnectionState,
+    /// The state machine
+    state: SshConnectionStateMachine,
 }
 
 impl SshConnection {
@@ -33,7 +40,7 @@ impl SshConnection {
         SshConnection {
             disconnect: Arc::new(AtomicBool::new(false)),
             failures: 0,
-            state: SshConnectionState::Requested,
+            state: SshConnectionStateMachine::Requested,
         }
     }
 
@@ -65,26 +72,46 @@ impl SshConnectionHandle {
     }
 }
 
-/// Public-facing connection change events
+/// Public-facing connection change events.
+///
+/// When a key event occurs in the connection lifecycle, one of these will be emitted from the
+/// stream.
 #[derive(Debug, Eq, PartialEq)]
 pub enum SshConnectionChange {
+    /// The connection has started connecting
     Connecting,
+    /// A connection has been established
     Connected,
+    /// The connection has started disconnecting
     Disconnecting,
+    /// The connection has disconnected (this is the end state)
     Disconnected,
+    /// A connection failed (either failed to connect initially, or was connected and has dropped).
+    /// The value is how many times *consecutively* the failure has occurred (i.e., this value is
+    /// reset to 0 every time a successful connection has been made).
     Failed(usize),
 }
 
-/// Internal connection state. These seem to duplicate the public-facing change events, but contain
-/// more data and internal state.
-enum SshConnectionState {
-    Requested,
-    Connecting(Connect),
-    Connected(Delay),
-    Checking(Check),
-    Disconnecting(Disconnect),
-    Disconnected,
-    Failed(Delay),
+/// Internal connection state.
+///
+/// The SshConnection essentially amounts to a state machine that transitions through the following
+/// states.
+enum SshConnectionStateMachine {
+    /// The connection has been requested, but the state machine has not acted on it
+    Requested, // -> Connecting
+    /// The connection is attempting to be established
+    Connecting(Connect), // -> Connected, Failed
+    /// The connection is established, and will be checked after the given delay
+    Connected(Delay), // -> Checking
+    /// The connection is being checked to see if it still active
+    Checking(Check), // -> Connected, Failed
+    /// The connection is being disconnected. Note that we can get to this state from any other
+    /// state when SshConnection's disconnect member is true.
+    Disconnecting(Disconnect), // -> Disconnected
+    /// The connection has been disconnected.
+    Disconnected, // *end state*
+    /// The connection has failed, and will be retried after the given delay
+    Failed(Delay), // -> Connecting, Failed
 }
 
 impl Stream for SshConnection {
@@ -92,7 +119,7 @@ impl Stream for SshConnection {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        use self::SshConnectionState::*;
+        use self::SshConnectionStateMachine::*;
 
         loop {
             let state = std::mem::replace(&mut self.state, Requested);
@@ -196,202 +223,4 @@ impl Stream for SshConnection {
     }
 }
 
-type CommandFuture = Box<dyn Future<Item=bool, Error=()> + Send>;
-
-/// A future that attempts to establish an ssh connection
-///
-/// Returns true if the connection already exists or if a new connection succeeds, and false if the
-/// connection cannot be established.
-struct Connect {
-    data: ConnectData
-}
-
-impl Connect {
-    fn new() -> Connect {
-        Connect {
-            data: ConnectData::None,
-        }
-    }
-}
-
-/// Internal connection data for the Connect future.
-enum ConnectData {
-    None,
-    CheckFuture(CommandFuture),
-    ConnectFuture(CommandFuture),
-}
-
-impl ConnectData {
-    /// Create a new half of a future that checks whether a connection is already active.
-    fn new_check() -> ConnectData {
-        let f = poll_fn(move || {
-            blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-O",
-                                         "check",
-                                         "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
-                ])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .unwrap()
-                    .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
-        });
-
-        ConnectData::CheckFuture(Box::new(f))
-    }
-
-    /// Create a new half of a future that establishes a new connection.
-    fn new_connect() -> ConnectData {
-        let f = poll_fn(move || {
-            blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-f",
-                                         "-N",
-                                         "-R",
-                                         "0:localhost:22",
-                                         "-M",
-                                         "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
-                ])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .unwrap()
-                    .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
-        });
-
-        ConnectData::ConnectFuture(Box::new(f))
-    }
-}
-
-impl Future for Connect {
-    type Item = bool;
-    type Error = ();
-
-    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        loop {
-            let val = std::mem::replace(&mut self.data, ConnectData::None);
-            match val {
-                ConnectData::None => {
-                    self.data = ConnectData::new_check();
-                },
-                ConnectData::CheckFuture(mut future) => {
-                    match future.poll()? {
-                        Async::Ready(result) => {
-                            if result {
-                                // If the check returned true, we're already connected. So we can,
-                                // in good conscience, say that we're connected.
-                                return Ok(Async::Ready(true))
-                            }
-
-                            // If the check returned false, we're not already connected. Well,
-                            // might as well get on connecting, then.
-                            self.data = ConnectData::new_connect();
-                        },
-                        Async::NotReady => {
-                            self.data = ConnectData::CheckFuture(future);
-
-                            return Ok(Async::NotReady);
-                        }
-                    }
-                },
-                ConnectData::ConnectFuture(mut future) => {
-                    let result = future.poll();
-                    self.data = ConnectData::ConnectFuture(future);
-
-                    return result;
-                },
-            }
-        }
-    }
-}
-
-/// A future that checks whether an ssh socket is still active
-///
-/// Returns true if the socket is still active, and false if the socket is no longer active.
-struct Check {
-    future: CommandFuture,
-}
-
-impl Check {
-    fn new() -> Check {
-        let f = poll_fn(move || {
-            blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-O",
-                                         "check",
-                                         "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
-                ])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .unwrap()
-                    .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
-        });
-
-        Check {
-            future: Box::new(f),
-        }
-    }
-}
-
-impl Future for Check {
-    type Item = bool;
-    type Error = ();
-
-    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        self.future.poll()
-    }
-}
-
-/// A future that disconnects a ssh socket
-struct Disconnect {
-    future: CommandFuture,
-}
-
-impl Disconnect {
-    fn new() -> Disconnect {
-        let f = poll_fn(move || {
-            blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-O",
-                                         "exit",
-                                         "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
-                ])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .unwrap()
-                    .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
-        });
-
-        Disconnect {
-            future: Box::new(f),
-        }
-    }
-}
-
-impl Future for Disconnect {
-    type Item = bool;
-    type Error = ();
-
-    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        self.future.poll()
-    }
-}
+type CommandFuture<T> = Box<dyn Future<Item=T, Error=()> + Send>;
