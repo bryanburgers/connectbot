@@ -23,14 +23,28 @@ pub struct TimedConnection<T> {
 }
 
 impl<T> TimedConnection<T> {
-    pub fn new(stream: T) -> TimedConnection<T> {
+    pub fn new(stream: T, options: TimedConnectionOptions) -> TimedConnection<T> {
         TimedConnection {
             stream: Some(stream),
             check_interval: Some(Interval::new(Instant::now(), Duration::from_millis(1000))),
-            warning_level: Duration::from_millis(10000),
-            disconnect_level: Duration::from_millis(30000),
+            warning_level: options.warning_level,
+            disconnect_level: options.disconnect_level,
             last_message: Instant::now(),
             warning_sent: false,
+        }
+    }
+}
+
+pub struct TimedConnectionOptions {
+    pub warning_level: Duration,
+    pub disconnect_level: Duration,
+}
+
+impl Default for TimedConnectionOptions {
+    fn default() -> TimedConnectionOptions {
+        TimedConnectionOptions {
+            warning_level: Duration::from_millis(10_000),
+            disconnect_level: Duration::from_millis(30_000),
         }
     }
 }

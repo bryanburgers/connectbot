@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 
 use comms_shared::codec::Codec;
 use comms_shared::protos::{client, control};
+use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
 
 pub struct Server {
     state: Arc<RwLock<HashMap<String, Client>>>,
@@ -46,15 +47,12 @@ impl Server {
             let now = Instant::now();
             let mut hash_map = state.write().unwrap();
             hash_map.retain(move |_, v| {
-                now.duration_since(v.connected).as_secs() < 10
-                /*
                 if let Some(last_message) = v.last_message {
                     now.duration_since(last_message).as_secs() < 10
                 }
                 else {
-                    false
+                    true
                 }
-                */
             });
 
             futures::future::ok(())
@@ -63,10 +61,10 @@ impl Server {
     }
 
     pub fn handle_client_connection(&self, conn: TcpStream) -> impl Future<Item=(), Error=std::io::Error> {
-        println!("{:?}", conn);
 
         // TODO: Get ID from TLS certificate
         let id = "abcd".to_string();
+        println!("! {}: connected from {}", id, conn.peer_addr().unwrap());
 
         // Mark the connection time.
         {
@@ -88,12 +86,15 @@ impl Server {
         let framed = tokio_codec::Decoder::framed(codec, conn);
         let (sink, stream) = framed.split();
 
+        let stream = TimedConnection::new(stream, TimedConnectionOptions { ..Default::default() });
+
         let (tx, rx) = futures::sync::mpsc::channel(0);
 
         let sink = sink.sink_map_err(|_| ());
         let rx = rx.map_err(|_| panic!());
 
-        tokio::spawn(rx.forward(sink).then(|result| {
+        let client_id = id.clone();
+        tokio::spawn(rx.map(move |message| { println!("↓ {}: {:?}", client_id, message); message }).forward(sink).then(|result| {
             if let Err(e) = result {
                 panic!("failed to write to socket: {:?}", e)
             }
@@ -104,46 +105,73 @@ impl Server {
         let id = id.clone();
 
         stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
-            println!("{:?}", message);
-            {
-                let id = id.clone();
-                let mut hash_map = state.write().unwrap();
-                hash_map.entry(id)
-                    .and_modify(|client| {
-                        client.last_message = Some(Instant::now());
-                    });
-            }
-            /*
-            if message.has_clients_request() {
-                let clients_response = control::ClientsResponse::new();
-                let mut response = control::ServerMessage::new();
-                response.set_clients_response(clients_response);
-                response.set_in_response_to(message.get_message_id());
+            match message {
+                TimedConnectionItem::Item(message) => {
+                    println!("↑ {}: {:?}", id.clone(), message);
+                    {
+                        let id = id.clone();
+                        let mut hash_map = state.write().unwrap();
+                        hash_map.entry(id)
+                            .and_modify(|client| {
+                                client.last_message = Some(Instant::now());
+                            });
+                    }
 
-                /*
-                return tx.clone().send(response)
-                    .map(|_| ())
-                    .map_err(|_| ());
-                    */
+                    if message.has_ping() {
+                        let pong = client::Pong::new();
+                        let mut message = client::ServerMessage::new();
+                        message.set_pong(pong);
 
-                let f = tx.clone().send(response)
-                    .map(|_| ())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
-                    // .map_err(|_| ());
+                        let f = tx.clone().send(message)
+                            .map(|_| ())
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
 
-                return Box::new(f);
-
+                        return Box::new(f);
+                    }
                     /*
-                let f = tx.clone().send(response)
-                    .map(|_| ())
-                    .map_err(|_| ());
-                tokio::spawn(f);
-                */
-            }
-        */
+                    if message.has_clients_request() {
+                        let clients_response = control::ClientsResponse::new();
+                        let mut response = control::ServerMessage::new();
+                        response.set_clients_response(clients_response);
+                        response.set_in_response_to(message.get_message_id());
 
-            // message_handler::handle_message(message, tx.clone(), new_state.clone())
-            Box::new(futures::future::ok(()))
+                        /*
+                        return tx.clone().send(response)
+                            .map(|_| ())
+                            .map_err(|_| ());
+                            */
+
+                        let f = tx.clone().send(response)
+                            .map(|_| ())
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+                            // .map_err(|_| ());
+
+                        return Box::new(f);
+
+                            /*
+                        let f = tx.clone().send(response)
+                            .map(|_| ())
+                            .map_err(|_| ());
+                        tokio::spawn(f);
+                        */
+                    }
+                */
+
+                    // message_handler::handle_message(message, tx.clone(), new_state.clone())
+                    Box::new(futures::future::ok(()))
+                },
+                TimedConnectionItem::Timeout => {
+                    let ping = client::Ping::new();
+                    let mut response = client::ServerMessage::new();
+                    response.set_ping(ping);
+
+                    let f = tx.clone().send(response)
+                        .map(|_| ())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
+
+                    Box::new(f)
+                },
+            }
         })
             .and_then(move |_| {
                 println!("Disconnect?");

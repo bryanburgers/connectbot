@@ -16,10 +16,12 @@ extern crate comms_shared;
 mod ssh_connection;
 
 use futures::{Future, Stream, Sink};
+use std::time::Duration;
 
 use tokio::net::TcpStream;
 use comms_shared::codec::Codec;
 use comms_shared::protos::client;
+use comms_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
 fn main() {
     let addr = "[::1]:12321".parse().unwrap();
@@ -37,15 +39,47 @@ fn main() {
         let sink = sink.sink_map_err(|_| ());
         let rx = rx.map_err(|_| panic!());
 
-        tokio::spawn(rx.forward(sink).then(|result| {
+        tokio::spawn(rx.map(|message| { println!("↑ {:?}", message); message }).forward(sink).then(|result| {
             if let Err(e) = result {
                 panic!("failed to write to socket: {:?}", e)
             }
             Ok(())
         }));
 
+        let stream = TimedConnection::new(stream, TimedConnectionOptions {
+            warning_level: Duration::from_millis(60_000),
+            disconnect_level: Duration::from_millis(120_000),
+        });
+
         stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
-            println!("{:?}", message);
+            match message {
+                TimedConnectionItem::Item(message) => {
+                    println!("↓ {:?}", message);
+
+                    if message.has_ping() {
+                        let pong = client::Pong::new();
+                        let mut client_message = client::ClientMessage::new();
+                        client_message.set_pong(pong);
+
+                        let f = tx.clone().send(client_message)
+                            .map(|_| ())
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send pong: {}", e)));
+
+                        return Box::new(f);
+                    }
+                },
+                TimedConnectionItem::Timeout => {
+                    let ping = client::Ping::new();
+                    let mut client_message = client::ClientMessage::new();
+                    client_message.set_ping(ping);
+
+                    let f = tx.clone().send(client_message)
+                        .map(|_| ())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
+
+                    return Box::new(f);
+                },
+            }
             Box::new(futures::future::ok(()))
         })
     });
