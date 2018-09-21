@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package client;
+
+message ClientMessage {
+  oneof msg {
+    Ping ping = 3;
+    Pong pong = 4;
+    SshConnectionStatus ssh_status = 5;
+  }
+}
+
+message ServerMessage {
+  oneof msg {
+    Ping ping = 3;
+    Pong pong = 4;
+    SshConnection ssh_connection = 5;
+  }
+}
+
+message Ping {}
+
+message Pong {}
+
+message SshConnection {
+  // Enable an SSH connection. This is idempotent: the server can send this as
+  // frequently as it likes, and the client must be able to handle it.
+  message Enable {
+    // The host that the client needs to connect to
+    string ssh_host = 1;
+    // The port of the SSH service that the client needs to connect to
+    uint32 ssh_port = 2;
+    // The username to use when connecting to the SSH service
+    string ssh_username = 3;
+    // The SSH key to use when connecting to the SSH service
+    string ssh_key = 4;
+  
+    // The host (local or within the local network) to forward. If this is empty, assume localhost
+    string forward_host = 5;
+    // The port (local or within the local network) to forward
+    uint32 forward_port = 6;
+    // The port on the SSH service to forward
+    uint32 remote_port = 7;
+    // Whether to use a gateway port (make sure the port gets forward externally)
+    bool gateway_port = 8;
+  }
+
+  // Disable an SSH connection. Once a connection is disabled, it cannot be
+  // re-enabled. (A new SSH connection would be needed instead of re-enabling.)
+  message Disable {}
+
+  // Globally unique ID of the SSH connection
+  string id = 1;
+  oneof msg {
+    Enable enable = 2;
+    Disable disable = 3;
+  }
+}
+
+// Information about a client's SSH connection that has been requested.
+message SshConnectionStatus {
+  enum State {
+    UNKNOWN_STATE = 0;
+    REQUESTED = 1;
+    CONNECTING = 2;
+    CONNECTED = 3;
+    DISCONNECTING = 4;
+    DISCONNECTED = 5;
+    FAILED = 6;
+  }
+
+  // The ID of the SSH connection
+  string id = 1;
+  // The current state of the connection.
+  State state = 2;
+  // If state is Failure, how many failures we've seen.
+  uint32 failures = 3;
+}
