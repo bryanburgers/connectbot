@@ -27,12 +27,13 @@ use futures::Future;
 use std::sync::Arc;
 
 use std::io::BufReader;
-use std::fs::File;
+use std::fs::{self, File};
 
 use tokio_rustls::{
     ServerConfigExt,
     rustls::{
-        Certificate, NoClientAuth, PrivateKey, ServerConfig,
+        Certificate, NoClientAuth, PrivateKey, ServerConfig, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
+        ServerSession, Session,
         internal::pemfile::{ certs, rsa_private_keys }
     },
 };
@@ -72,7 +73,11 @@ fn main() {
         let addr = matches.value_of("address").unwrap();
         let socket_addr = addr.parse().unwrap();
 
-        let mut config = ServerConfig::new(NoClientAuth::new());
+        // let mut config = ServerConfig::new(NoClientAuth::new());
+        let mut cert_store = RootCertStore::empty();
+        let mut pem = BufReader::new(fs::File::open("../ca.crt").unwrap());
+        cert_store.add_pem_file(&mut pem).unwrap();
+        let mut config = ServerConfig::new(AllowAnyAnonymousOrAuthenticatedClient::new(cert_store));
         config.set_single_cert(load_certs("../server2.pem"), load_keys("../server.key").remove(0))
             .expect("invalid key or certificate");
 
@@ -86,6 +91,11 @@ fn main() {
             arc_config.accept_async(connection)
                 .and_then(move |stream| {
                     println!("{:?}", stream);
+                    {
+                        let (_, s) = stream.get_ref();
+                        let certs = s.get_peer_certificates();
+                        println!("{:?}", certs);
+                    }
                     let future = server.handle_client_connection(addr, stream)
                         .map_err(|e| println!("Warning: {}", e));
 

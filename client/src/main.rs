@@ -26,9 +26,24 @@ use comms_shared::protos::client;
 use comms_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
 use std::io::BufReader;
-use tokio_rustls::{ TlsConnector, rustls::ClientConfig, webpki };
-use std::fs;
+use tokio_rustls::{
+    TlsConnector,
+    rustls::{
+        Certificate, ClientConfig, PrivateKey,
+        internal::pemfile::{ certs, rsa_private_keys },
+    },
+    webpki
+};
+use std::fs::{self, File};
 use std::sync::Arc;
+
+fn load_certs(path: &str) -> Vec<Certificate> {
+    certs(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+}
+
+fn load_keys(path: &str) -> Vec<PrivateKey> {
+    rsa_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+}
 
 fn main() {
     let addr = "[::1]:12321".parse().unwrap();
@@ -40,8 +55,10 @@ fn main() {
     println!("{:?}", pem);
     // config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
     config.root_store.add_pem_file(&mut pem).unwrap();
+    config.set_single_client_cert(load_certs("../client2.pem"), load_keys("../client.key").remove(0));
     let arc_config = Arc::new(config);
     println!("three");
+
     let connect = TcpStream::connect(&addr);
 
     let f2 = connect

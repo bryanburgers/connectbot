@@ -53,3 +53,9 @@ Create a key for each client that will connect. We should have one per device.
     
     openssl x509 -in client.crt -text -noout
 
+## Client Key (redux)
+
+    openssl genrsa -out client.key 4096
+    openssl req -new -out client2.csr -key client.key -nodes -config client2.cnf
+
+    openssl x509 -req -in client2.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client2.crt -days 36500 -sha256 -extfile client2.cnf -extensions req_ext
