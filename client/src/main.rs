@@ -11,7 +11,9 @@ extern crate tokio_dns;
 extern crate tokio_io;
 extern crate tokio_threadpool;
 extern crate tokio_timer;
+extern crate tokio_rustls;
 extern crate comms_shared;
+extern crate webpki_roots;
 
 mod ssh_connection;
 
@@ -23,69 +25,95 @@ use comms_shared::codec::Codec;
 use comms_shared::protos::client;
 use comms_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
+use std::io::BufReader;
+use tokio_rustls::{ TlsConnector, rustls::ClientConfig, webpki };
+use std::fs;
+use std::sync::Arc;
+
 fn main() {
     let addr = "[::1]:12321".parse().unwrap();
+    // let addr = "167.99.112.36:443".parse().unwrap();
+    let mut config = ClientConfig::new();
+    println!("one");
+    let mut pem = BufReader::new(fs::File::open("../ca.crt").unwrap());
+    println!("two");
+    println!("{:?}", pem);
+    // config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+    config.root_store.add_pem_file(&mut pem).unwrap();
+    let arc_config = Arc::new(config);
+    println!("three");
     let connect = TcpStream::connect(&addr);
 
-    let f2 = connect.and_then(|stream| {
-        println!("{:?}", stream);
+    let f2 = connect
+        .and_then(move |stream| {
+            println!("{:?}", stream);
+            let domain = webpki::DNSNameRef::try_from_ascii_str("comms-server").unwrap();
+            // let domain = webpki::DNSNameRef::try_from_ascii_str("burgers.io").unwrap();
+            println!("{:?}", domain);
+            // arc_config.connect_async(domain, stream)
+            let connector: TlsConnector = arc_config.clone().into();
+            connector.connect(domain, stream)
+        })
+        .and_then(|stream| {
+            println!("this and_then");
+            println!("{:?}", stream);
 
-        let codec: Codec<client::ClientMessage, client::ServerMessage> = Codec::new();
-        let framed = tokio_codec::Decoder::framed(codec, stream);
-        let (sink, stream) = framed.split();
+            let codec: Codec<client::ClientMessage, client::ServerMessage> = Codec::new();
+            let framed = tokio_codec::Decoder::framed(codec, stream);
+            let (sink, stream) = framed.split();
 
-        let (tx, rx) = futures::sync::mpsc::channel(0);
+            let (tx, rx) = futures::sync::mpsc::channel(0);
 
-        let sink = sink.sink_map_err(|_| ());
-        let rx = rx.map_err(|_| panic!());
+            let sink = sink.sink_map_err(|_| ());
+            let rx = rx.map_err(|_| panic!());
 
-        tokio::spawn(rx.map(|message| { println!("↑ {:?}", message); message }).forward(sink).then(|result| {
-            if let Err(e) = result {
-                panic!("failed to write to socket: {:?}", e)
-            }
-            Ok(())
-        }));
+            tokio::spawn(rx.map(|message| { println!("↑ {:?}", message); message }).forward(sink).then(|result| {
+                if let Err(e) = result {
+                    panic!("failed to write to socket: {:?}", e)
+                }
+                Ok(())
+            }));
 
-        let stream = TimedConnection::new(stream, TimedConnectionOptions {
-            warning_level: Duration::from_millis(60_000),
-            disconnect_level: Duration::from_millis(120_000),
-        });
+            let stream = TimedConnection::new(stream, TimedConnectionOptions {
+                warning_level: Duration::from_millis(60_000),
+                disconnect_level: Duration::from_millis(120_000),
+            });
 
-        stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
-            match message {
-                TimedConnectionItem::Item(message) => {
-                    println!("↓ {:?}", message);
+            stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
+                match message {
+                    TimedConnectionItem::Item(message) => {
+                        println!("↓ {:?}", message);
 
-                    if message.has_ping() {
-                        let pong = client::Pong::new();
+                        if message.has_ping() {
+                            let pong = client::Pong::new();
+                            let mut client_message = client::ClientMessage::new();
+                            client_message.set_pong(pong);
+
+                            let f = tx.clone().send(client_message)
+                                .map(|_| ())
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send pong: {}", e)));
+
+                            return Box::new(f);
+                        }
+                    },
+                    TimedConnectionItem::Timeout => {
+                        let ping = client::Ping::new();
                         let mut client_message = client::ClientMessage::new();
-                        client_message.set_pong(pong);
+                        client_message.set_ping(ping);
 
                         let f = tx.clone().send(client_message)
                             .map(|_| ())
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send pong: {}", e)));
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
 
                         return Box::new(f);
-                    }
-                },
-                TimedConnectionItem::Timeout => {
-                    let ping = client::Ping::new();
-                    let mut client_message = client::ClientMessage::new();
-                    client_message.set_ping(ping);
-
-                    let f = tx.clone().send(client_message)
-                        .map(|_| ())
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
-
-                    return Box::new(f);
-                },
-            }
-            Box::new(futures::future::ok(()))
-        })
-    });
+                    },
+                }
+                Box::new(futures::future::ok(()))
+            })
+        });
 
 
-    tokio::run(f2.map_err(|e| println!("{:?}", e)));
+    tokio::run(f2.map_err(|e| println!("this error: {:?}", e)));
 
     /*
     let lazy = futures::lazy(|| {

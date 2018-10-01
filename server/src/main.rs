@@ -11,6 +11,7 @@ extern crate tokio_io;
 extern crate tokio_threadpool;
 extern crate tokio_timer;
 extern crate tokio_codec;
+extern crate tokio_rustls;
 
 extern crate comms_shared;
 
@@ -25,7 +26,24 @@ use futures::Sink;
 use futures::Future;
 use std::sync::Arc;
 
-struct Server;
+use std::io::BufReader;
+use std::fs::File;
+
+use tokio_rustls::{
+    ServerConfigExt,
+    rustls::{
+        Certificate, NoClientAuth, PrivateKey, ServerConfig,
+        internal::pemfile::{ certs, rsa_private_keys }
+    },
+};
+
+fn load_certs(path: &str) -> Vec<Certificate> {
+    certs(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+}
+
+fn load_keys(path: &str) -> Vec<PrivateKey> {
+    rsa_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+}
 
 fn main() {
     let matches = App::new("comms-server")
@@ -53,14 +71,33 @@ fn main() {
     let client_future = {
         let addr = matches.value_of("address").unwrap();
         let socket_addr = addr.parse().unwrap();
+
+        let mut config = ServerConfig::new(NoClientAuth::new());
+        config.set_single_cert(load_certs("../server2.pem"), load_keys("../server.key").remove(0))
+            .expect("invalid key or certificate");
+
+        let arc_config = Arc::new(config);
+
         let listener = TcpListener::bind(&socket_addr).unwrap();
         let server = server_arc.clone();
         let future = listener.incoming().for_each(move |connection| {
-            let future = server.handle_client_connection(connection)
-                .map_err(|e| println!("Warning: {}", e));
-            tokio::spawn(future);
+            let addr = connection.peer_addr().unwrap();
+            let server = server.clone();
+            arc_config.accept_async(connection)
+                .and_then(move |stream| {
+                    println!("{:?}", stream);
+                    let future = server.handle_client_connection(addr, stream)
+                        .map_err(|e| println!("Warning: {}", e));
 
-            Ok(())
+                    tokio::spawn(future);
+
+                    Ok(())
+                })
+                .or_else(|err| {
+                    println!("Connection failed: {}", err);
+
+                    futures::future::ok(())
+                })
         })
             .map_err(|e| println!("Error: {}", e));
 

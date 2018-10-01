@@ -14,6 +14,9 @@ use comms_shared::codec::Codec;
 use comms_shared::protos::{client, control};
 use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
 
+use tokio_rustls::TlsStream;
+use tokio_rustls::rustls;
+
 pub struct Server {
     state: Arc<RwLock<HashMap<String, Client>>>,
 }
@@ -60,11 +63,14 @@ impl Server {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Interval failed: {}", e)))
     }
 
-    pub fn handle_client_connection(&self, conn: TcpStream) -> impl Future<Item=(), Error=std::io::Error> {
+    pub fn handle_client_connection<S, C>(&self, addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
+        where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
+              C: rustls::Session + 'static,
+    {
 
         // TODO: Get ID from TLS certificate
         let id = "abcd".to_string();
-        println!("! {}: connected from {}", id, conn.peer_addr().unwrap());
+        println!("! {}: connected from {}", id, &addr);
 
         // Mark the connection time.
         {
@@ -74,7 +80,7 @@ impl Server {
                     client.connected = Instant::now();
                 }).or_insert(Client {
                     id: id.clone(),
-                    address: conn.peer_addr().unwrap(),
+                    address: addr.clone(),
                     connected: Instant::now(),
                     last_message: None,
                 });
