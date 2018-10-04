@@ -12,6 +12,7 @@ extern crate tokio_threadpool;
 extern crate tokio_timer;
 extern crate tokio_codec;
 extern crate tokio_rustls;
+extern crate uuid;
 
 extern crate comms_shared;
 
@@ -91,11 +92,11 @@ fn main() {
             arc_config.accept_async(connection)
                 .and_then(move |stream| {
                     println!("{:?}", stream);
-                    {
-                        let (_, s) = stream.get_ref();
-                        let certs = s.get_peer_certificates();
-                        println!("{:?}", certs);
-                    }
+                    // {
+                    //     let (_, s) = stream.get_ref();
+                    //     let certs = s.get_peer_certificates();
+                    //     println!("{:?}", certs);
+                    // }
                     let future = server.handle_client_connection(addr, stream)
                         .map_err(|e| println!("Warning: {}", e));
 

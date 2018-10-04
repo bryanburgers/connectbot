@@ -91,12 +91,27 @@ fn main() {
                 Ok(())
             }));
 
+            let initialize_future = {
+                // Send the initialize message.
+                let mut initialize = client::Initialize::new();
+                initialize.set_id("7fa19923-b8f8-4fb6-81d3-3cc60ae7cbf2".into());
+                initialize.set_comms_version("1.0".into());
+                let mut client_message = client::ClientMessage::new();
+                client_message.set_initialize(initialize);
+
+                let f = tx.clone().send(client_message)
+                    .map(|_| ())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send initialize: {}", e)));
+
+                f
+            };
+
             let stream = TimedConnection::new(stream, TimedConnectionOptions {
                 warning_level: Duration::from_millis(60_000),
                 disconnect_level: Duration::from_millis(120_000),
             });
 
-            stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
+            let stream_future = stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
                 match message {
                     TimedConnectionItem::Item(message) => {
                         println!("↓ {:?}", message);
@@ -126,7 +141,10 @@ fn main() {
                     },
                 }
                 Box::new(futures::future::ok(()))
-            })
+            });
+
+            initialize_future.join(stream_future)
+                .map(|_| ())
         });
 
 

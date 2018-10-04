@@ -8,7 +8,7 @@ use futures::{self, Stream, Sink, Future};
 use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use comms_shared::codec::Codec;
 use comms_shared::protos::{client, control};
@@ -16,23 +16,51 @@ use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, Timed
 
 use tokio_rustls::TlsStream;
 use tokio_rustls::rustls;
+use uuid::Uuid;
 
 pub struct Server {
-    state: Arc<RwLock<HashMap<String, Client>>>,
+    state: Arc<RwLock<HashMap<String, Connection>>>,
 }
 
 /// Information about a connected (or unconnected) client.
 #[derive(Debug)]
-pub struct Client {
-    id: String,
+pub struct Connection {
+    connection_id: String,
     address: SocketAddr,
     connected: Instant,
     last_message: Option<Instant>,
 }
 
+pub struct ServerData {
+    state: RwLock<HashMap<String, ClientData>>
+}
+
 /// An SSH connection for a client.
 #[derive(Debug)]
-pub struct ClientConnection {
+pub struct ClientData {
+    id: String,
+    // Notify the actual client of
+    //   1. New actions it should perform
+    //   2. Tell it to disconnect if another device with the same ID connected
+    // tx: Option<Sender<>>
+    connection_status: ClientDataConnectionStatus,
+    // Connection History (how often this device has been connected over the past 2 days)
+    // connection_history: ConnectionHistory,
+    // When we've last seen the device
+    // last_message: Option<Instant>,
+    // SSH Sessions (a list of SSH sessions that this device should be connected to, and their
+    // current state)
+    // ssh_sessions: SshSessions,
+}
+
+#[derive(Debug)]
+enum ClientDataConnectionStatus {
+    /// The client is currently connected
+    Connected { address: IpAddr },
+    /// The client has been connected, but is not currently connected
+    Disconnected { last_seen: Instant },
+    /// The client has not been seen (or has not been seen recently)
+    Unknown,
 }
 
 impl Server {
@@ -68,18 +96,18 @@ impl Server {
               C: rustls::Session + 'static,
     {
 
-        // TODO: Get ID from TLS certificate
-        let id = "abcd".to_string();
-        println!("! {}: connected from {}", id, &addr);
+        let uuid = Uuid::new_v4();
+        let uuid = format!("{}", uuid);
+        println!("! {}: connected from {}", uuid, &addr.ip());
 
         // Mark the connection time.
         {
             let mut hash_map = self.state.write().unwrap();
-            hash_map.entry(id.clone())
+            hash_map.entry(uuid.clone())
                 .and_modify(|client| {
                     client.connected = Instant::now();
-                }).or_insert(Client {
-                    id: id.clone(),
+                }).or_insert(Connection {
+                    connection_id: uuid.clone(),
                     address: addr.clone(),
                     connected: Instant::now(),
                     last_message: None,
@@ -99,7 +127,7 @@ impl Server {
         let sink = sink.sink_map_err(|_| ());
         let rx = rx.map_err(|_| panic!());
 
-        let client_id = id.clone();
+        let client_id = uuid.clone();
         tokio::spawn(rx.map(move |message| { println!("↓ {}: {:?}", client_id, message); message }).forward(sink).then(|result| {
             if let Err(e) = result {
                 panic!("failed to write to socket: {:?}", e)
@@ -108,7 +136,7 @@ impl Server {
         }));
 
         let state = self.state.clone();
-        let id = id.clone();
+        let id = uuid.clone();
 
         stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
             match message {
@@ -133,6 +161,13 @@ impl Server {
                             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
 
                         return Box::new(f);
+                    }
+
+                    if message.has_initialize() {
+                        println!("Initialized!");
+
+                        // TODO: Do stuff. Maybe disconnect any existing items. Store some data.
+                        // Update some thingses.
                     }
                     /*
                     if message.has_clients_request() {
@@ -215,7 +250,7 @@ impl Server {
                     for client in hash_map.values() {
                         // println!("{:?} {:?}", key, value);
                         let mut client_data = control::ClientsResponse_Client::new();
-                        client_data.set_id(client.id.clone().into());
+                        client_data.set_id(client.connection_id.clone().into());
                         // TODO: This should be the IpAddr, not the SocketAddr. But I'm on a plane
                         // and can't look up how to get just the IpAddr part from the SocketAddr
                         // part.

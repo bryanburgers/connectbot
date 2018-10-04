@@ -6,7 +6,8 @@ message ClientMessage {
   oneof msg {
     Ping ping = 3;
     Pong pong = 4;
-    SshConnectionStatus ssh_status = 5;
+    Initialize initialize = 5;
+    SshConnectionStatus ssh_status = 6;
   }
 }
 
@@ -22,6 +23,13 @@ message Ping {}
 
 message Pong {}
 
+message Initialize {
+  // The unique ID of the device
+  string id = 1;
+  // The version of the communications software on the device.
+  string comms_version = 2;
+}
+
 message SshConnection {
   // Enable an SSH connection. This is idempotent: the server can send this as
   // frequently as it likes, and the client must be able to handle it.
@@ -34,7 +42,7 @@ message SshConnection {
     string ssh_username = 3;
     // The SSH key to use when connecting to the SSH service
     string ssh_key = 4;
-  
+
     // The host (local or within the local network) to forward. If this is empty, assume localhost
     string forward_host = 5;
     // The port (local or within the local network) to forward
