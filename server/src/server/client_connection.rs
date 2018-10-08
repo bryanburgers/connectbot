@@ -36,7 +36,11 @@ pub struct ClientConnection {
     /// Temporary storage for the backchannel receiver. Once the connection starts, this will be
     /// taken and replaced with None, so it is mostly useless except to temporarily store it before
     /// the connection starts.
-    _back_channel: Receiver<()>,
+    _back_channel: Option<Receiver<()>>,
+    /// The device ID for this client
+    device_id: Option<String>,
+    /// The last time we received any message from this client
+    last_message: Option<Instant>,
 }
 
 /// A handle to an active client connection. Certain messages can be sent on this client's back
@@ -61,7 +65,9 @@ impl ClientConnection {
             tx: tx,
             rx: Some(rx),
             back_channel_sender: sender,
-            _back_channel: receiver,
+            _back_channel: Some(receiver),
+            device_id: None,
+            last_message: None,
         }
     }
 
@@ -73,7 +79,11 @@ impl ClientConnection {
         }
     }
 
-    fn handle_client_message(self, message: client::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+    fn on_client_message(mut self, mut message: client::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+        println!("↑ {}: {:?}", &self.id, message);
+
+        self.last_message = Some(Instant::now());
+
         if message.has_ping() {
             let pong = client::Pong::new();
             let mut message = client::ServerMessage::new();
@@ -90,6 +100,11 @@ impl ClientConnection {
 
         if message.has_initialize() {
             println!("Initialized!");
+
+            let mut initialize = message.take_initialize();
+            let device_id = initialize.take_id().to_string();
+
+            self.device_id = Some(device_id);
             // Update some thingses.
         }
 
@@ -126,6 +141,38 @@ impl ClientConnection {
         Box::new(futures::future::ok(self))
     }
 
+    fn on_timeout(self) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+        let ping = client::Ping::new();
+        let mut response = client::ServerMessage::new();
+        response.set_ping(ping);
+
+        let f = self.tx.clone().send(response)
+            .map(|_| self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
+
+        Box::new(f)
+    }
+
+    fn on_disconnect(self) -> impl Future<Item=(), Error=std::io::Error> {
+        let uuid = self.id;
+        let world = self.world.clone();
+
+        if let Some(device_id) = self.device_id {
+            // If we know the device_id, that means we received AT least one message. So we know
+            // that there was a last message to unwrap.
+            let last_message = self.last_message.unwrap();
+
+            let mut world = world.write().unwrap();
+            world.devices.entry(device_id.clone())
+                .and_modify(|device| {
+                    device.connection_status = world::ConnectionStatus::Disconnected { last_seen: last_message };
+                });
+            println!("! {}: Disconnect {}", uuid, device_id);
+        }
+
+        futures::future::ok(())
+    }
+
     /// Handle the TlsStream connection for this client. This consumes the client.
     pub fn handle_connection<S, C>(mut self, _addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
         where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
@@ -135,56 +182,33 @@ impl ClientConnection {
         let codec: Codec<client::ServerMessage, client::ClientMessage> = Codec::new();
         let framed = tokio_codec::Decoder::framed(codec, conn);
 
-        let (sink, stream) = framed.split();
+        let (client_message_sink, client_message_stream) = framed.split();
 
-        let stream = TimedConnection::new(stream, TimedConnectionOptions { ..Default::default() });
+        let client_message_stream = TimedConnection::new(client_message_stream, TimedConnectionOptions { ..Default::default() });
 
-        let sink = sink.sink_map_err(|_| ());
+        // In order to send things to the client, we set up a channel, and we forward that
+        // receiving end directly to the client on the TlsStream.
+        let client_message_sink = client_message_sink.sink_map_err(|_| ());
         let rx = std::mem::replace(&mut self.rx, None);
         let rx = rx.unwrap().map_err(|_| panic!());
+        let connection_id = self.id.clone();
+        let rx_forward = rx.map(move |message| { println!("↓ {}: {:?}", connection_id, message); message })
+            .forward(client_message_sink)
+            .then(|result| {
+                if let Err(e) = result {
+                    panic!("failed to write to socket: {:?}", e)
+                }
+                Ok(())
+            });
+        tokio::spawn(rx_forward);
 
-        let client_id = self.id.clone();
-        tokio::spawn(rx.map(move |message| { println!("↓ {}: {:?}", client_id, message); message }).forward(sink).then(|result| {
-            if let Err(e) = result {
-                panic!("failed to write to socket: {:?}", e)
-            }
-            Ok(())
-        }));
-
-        let id = self.id.clone();
-
-        stream.fold(self, move |client_connection, message| -> Box<dyn Future<Item=ClientConnection, Error=std::io::Error> + Send> {
+        // Then handle each message as it comes in.
+        client_message_stream.fold(self, |client_connection, message| {
             match message {
-                TimedConnectionItem::Item(message) => {
-                    println!("↑ {}: {:?}", id.clone(), message);
-                    client_connection.handle_client_message(message)
-                },
-                TimedConnectionItem::Timeout => {
-                    let ping = client::Ping::new();
-                    let mut response = client::ServerMessage::new();
-                    response.set_ping(ping);
-
-                    let f = client_connection.tx.clone().send(response)
-                        .map(|_| client_connection)
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
-
-                    Box::new(f)
-                },
+                TimedConnectionItem::Item(message) => client_connection.on_client_message(message),
+                TimedConnectionItem::Timeout => client_connection.on_timeout(),
             }
         })
-            .and_then(move |client_connection| {
-                let uuid = client_connection.id.clone();
-                let world = client_connection.world.clone();
-                {
-                    let mut world = world.write().unwrap();
-                    world.devices.entry(uuid.clone())
-                        .and_modify(|device| {
-                            device.connection_status = world::ConnectionStatus::Disconnected { last_seen: Instant::now() };
-                        });
-                }
-                println!("Disconnect? {:?}", uuid);
-
-                Ok(())
-            })
+            .and_then(|client_connection| client_connection.on_disconnect())
     }
 }
