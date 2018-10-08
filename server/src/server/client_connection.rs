@@ -6,7 +6,6 @@ use futures::{
     sync::mpsc::{channel, Sender, Receiver},
 };
 
-use std::sync::Arc;
 use std::time::Instant;
 use std::net::SocketAddr;
 
@@ -19,25 +18,41 @@ use tokio_rustls::rustls;
 
 use super::world::{self, SharedWorld};
 
+/// An active client connection that is currently being processed
 pub struct ClientConnection {
+    /// The UUID of the *Connection* (not the client ID)
     id: String,
+    /// The state of the entire World
     world: SharedWorld,
+    /// The channel on which to send messages back to the client
     tx: Sender<client::ServerMessage>,
+    /// Temporary storage for the receiver. Once the connection starts, this will be taken and
+    /// replaced with None, so is mostly useless except to temporarily store it before the
+    /// connection starts.
     rx: Option<Receiver<client::ServerMessage>>,
-    back_channel_sender: Arc<Sender<()>>,
+    /// The channel which other things (especially the ClientConnectionHandle) can use to send
+    /// back-channel messages to this client.
+    back_channel_sender: Sender<()>,
+    /// Temporary storage for the backchannel receiver. Once the connection starts, this will be
+    /// taken and replaced with None, so it is mostly useless except to temporarily store it before
+    /// the connection starts.
     _back_channel: Receiver<()>,
 }
 
+/// A handle to an active client connection. Certain messages can be sent on this client's back
+/// channel to the client.
 #[derive(Debug)]
 pub struct ClientConnectionHandle {
+    /// The UUID of the *Connection* (not the client)
     id: String,
-    sender: Arc<Sender<()>>,
+    /// The backchannel
+    sender: Sender<()>,
 }
 
 impl ClientConnection {
+    /// Create a new client
     pub fn new(id: String, world: SharedWorld) -> ClientConnection {
         let (sender, receiver) = channel(3);
-        let sender = Arc::new(sender);
         let (tx, rx) = futures::sync::mpsc::channel(0);
 
         ClientConnection {
@@ -50,6 +65,7 @@ impl ClientConnection {
         }
     }
 
+    /// Get a handle to the client, which can be used to send backchannel messages.
     pub fn get_handle(&self) -> ClientConnectionHandle {
         ClientConnectionHandle {
             id: self.id.clone(),
@@ -110,6 +126,7 @@ impl ClientConnection {
         Box::new(futures::future::ok(self))
     }
 
+    /// Handle the TlsStream connection for this client. This consumes the client.
     pub fn handle_connection<S, C>(mut self, _addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
         where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
               C: rustls::Session + 'static,
