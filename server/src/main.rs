@@ -22,10 +22,7 @@ mod world;
 
 use clap::{Arg, App};
 use tokio::net::TcpListener;
-use tokio::net::TcpStream;
-use futures::Stream;
-use futures::Sink;
-use futures::Future;
+use futures::{Future, Stream};
 use std::sync::Arc;
 
 use std::io::BufReader;
@@ -34,8 +31,7 @@ use std::fs::{self, File};
 use tokio_rustls::{
     ServerConfigExt,
     rustls::{
-        Certificate, NoClientAuth, PrivateKey, ServerConfig, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
-        ServerSession, Session,
+        Certificate, PrivateKey, ServerConfig, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
         internal::pemfile::{ certs, rsa_private_keys }
     },
 };

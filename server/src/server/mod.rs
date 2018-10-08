@@ -8,11 +8,10 @@ use futures::{self, Stream, Sink, Future};
 use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 
 use comms_shared::codec::Codec;
-use comms_shared::protos::{client, control};
-use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
+use comms_shared::protos::control;
 
 use tokio_rustls::TlsStream;
 use tokio_rustls::rustls;
@@ -36,38 +35,6 @@ pub struct Connection {
     address: SocketAddr,
     connected: Instant,
     last_message: Option<Instant>,
-}
-
-pub struct ServerData {
-    state: RwLock<HashMap<String, ClientData>>
-}
-
-/// An SSH connection for a client.
-#[derive(Debug)]
-pub struct ClientData {
-    id: String,
-    // Notify the actual client of
-    //   1. New actions it should perform
-    //   2. Tell it to disconnect if another device with the same ID connected
-    // tx: Option<Sender<>>
-    connection_status: ClientDataConnectionStatus,
-    // Connection History (how often this device has been connected over the past 2 days)
-    // connection_history: ConnectionHistory,
-    // When we've last seen the device
-    // last_message: Option<Instant>,
-    // SSH Sessions (a list of SSH sessions that this device should be connected to, and their
-    // current state)
-    // ssh_sessions: SshSessions,
-}
-
-#[derive(Debug)]
-enum ClientDataConnectionStatus {
-    /// The client is currently connected
-    Connected { address: IpAddr },
-    /// The client has been connected, but is not currently connected
-    Disconnected { last_seen: Instant },
-    /// The client has not been seen (or has not been seen recently)
-    Unknown,
 }
 
 impl Server {
@@ -99,7 +66,7 @@ impl Server {
 
             {
                 let mut world = world.write().unwrap();
-                world.devices.retain(move |_, v| {
+                world.devices.retain(move |_, _v| {
                     true
                 });
             }
@@ -144,10 +111,8 @@ impl Server {
                 });
         }
 
-
-
-        let mut connection = ClientConnection::new(uuid.clone(), self.world.clone());
-        let connection_handle = connection.get_handle();
+        let connection = ClientConnection::new(uuid.clone(), self.world.clone());
+        let _connection_handle = connection.get_handle();
         connection.handle_connection(addr, conn)
     }
 
