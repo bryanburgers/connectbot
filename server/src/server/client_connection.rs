@@ -3,7 +3,10 @@ use tokio;
 use tokio::net::TcpStream;
 use tokio_timer::Interval;
 use tokio_codec;
-use futures::{self, Stream, Sink, Future};
+use futures::{
+    self, Stream, Sink, Future,
+    sync::mpsc::{channel, Sender, Receiver},
+};
 
 use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
@@ -11,7 +14,7 @@ use std::time::{Duration, Instant};
 use std::net::{IpAddr, SocketAddr};
 
 use comms_shared::codec::Codec;
-use comms_shared::protos::{client, control};
+use comms_shared::protos::client;
 use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
 
 use tokio_rustls::TlsStream;
@@ -24,14 +27,34 @@ pub struct ClientConnection {
     id: String,
     client_id: Option<String>,
     world: SharedWorld,
+    back_channel_sender: Arc<Sender<()>>,
+    back_channel: Receiver<()>,
+}
+
+#[derive(Debug)]
+pub struct ClientConnectionHandle {
+    id: String,
+    sender: Arc<Sender<()>>,
 }
 
 impl ClientConnection {
     pub fn new(id: String, world: SharedWorld) -> ClientConnection {
+        let (sender, receiver) = channel(3);
+        let sender = Arc::new(sender);
+
         ClientConnection {
             id: id,
             client_id: None,
             world: world,
+            back_channel_sender: sender,
+            back_channel: receiver,
+        }
+    }
+
+    pub fn get_handle(&self) -> ClientConnectionHandle {
+        ClientConnectionHandle {
+            id: self.id.clone(),
+            sender: self.back_channel_sender.clone(),
         }
     }
 

@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::world::{self, SharedWorld};
 
-mod client_connection;
+pub mod client_connection;
 
 use self::client_connection::ClientConnection;
 
@@ -147,6 +147,7 @@ impl Server {
 
 
         let mut connection = ClientConnection::new(uuid.clone(), self.world.clone());
+        let connection_handle = connection.get_handle();
         connection.handle_connection(addr, conn)
     }
 

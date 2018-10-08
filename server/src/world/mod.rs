@@ -3,6 +3,8 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::net::IpAddr;
 
+use super::server::client_connection::ClientConnectionHandle;
+
 pub type SharedWorld = Arc<RwLock<World>>;
 
 /// The state of the entire world
@@ -37,6 +39,8 @@ pub struct Device {
     pub connection_status: ConnectionStatus,
     /// Information about forwards for the current device
     pub ssh_forwards: HashMap<String, SshForward>,
+    /// If there is an active connection for the device, a handle to that connection.
+    pub active_connection: Option<ClientConnectionHandle>,
 }
 
 impl Device {
@@ -46,6 +50,7 @@ impl Device {
             name: id.to_owned(),
             connection_status: ConnectionStatus::Unknown,
             ssh_forwards: HashMap::new(),
+            active_connection: None,
         }
     }
 }
