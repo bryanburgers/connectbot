@@ -36,7 +36,7 @@ pub struct ClientConnection {
     /// Temporary storage for the backchannel receiver. Once the connection starts, this will be
     /// taken and replaced with None, so it is mostly useless except to temporarily store it before
     /// the connection starts.
-    _back_channel: Option<Receiver<()>>,
+    back_channel: Option<Receiver<()>>,
     /// The device ID for this client
     device_id: Option<String>,
     /// The last time we received any message from this client
@@ -65,7 +65,7 @@ impl ClientConnection {
             tx: tx,
             rx: Some(rx),
             back_channel_sender: sender,
-            _back_channel: Some(receiver),
+            back_channel: Some(receiver),
             device_id: None,
             last_message: None,
         }
@@ -153,6 +153,12 @@ impl ClientConnection {
         Box::new(f)
     }
 
+    fn on_backchannel_message(self, message: ()) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+        println!("! {}: Received backchannel message {:?}", &self.id, message);
+
+        Box::new(futures::future::ok(self))
+    }
+
     fn on_disconnect(self) -> impl Future<Item=(), Error=std::io::Error> {
         let uuid = self.id;
         let world = self.world.clone();
@@ -172,6 +178,7 @@ impl ClientConnection {
 
         futures::future::ok(())
     }
+
 
     /// Handle the TlsStream connection for this client. This consumes the client.
     pub fn handle_connection<S, C>(mut self, _addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
@@ -202,13 +209,108 @@ impl ClientConnection {
             });
         tokio::spawn(rx_forward);
 
+        // Combine the back channel and the client messages into a single stream
+        let back_channel_stream = std::mem::replace(&mut self.back_channel, None).unwrap();
+        let back_channel_stream = back_channel_stream.map(|item| ClientBackchannelCombinedMessage::Backchannel(item))
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", err)));
+        let client_message_stream = client_message_stream.map(|item| ClientBackchannelCombinedMessage::ClientMessage(item));
+        // let combined = client_message_stream.select(back_channel_stream);
+        let combined = PrimarySecondaryStream::new(client_message_stream, back_channel_stream);
+
         // Then handle each message as it comes in.
-        client_message_stream.fold(self, |client_connection, message| {
+        combined.fold(self, |client_connection, message| {
+            use self::ClientBackchannelCombinedMessage::*;
+
             match message {
-                TimedConnectionItem::Item(message) => client_connection.on_client_message(message),
-                TimedConnectionItem::Timeout => client_connection.on_timeout(),
+                ClientMessage(TimedConnectionItem::Item(message)) => client_connection.on_client_message(message),
+                ClientMessage(TimedConnectionItem::Timeout) => client_connection.on_timeout(),
+                Backchannel(message) => client_connection.on_backchannel_message(message),
             }
         })
             .and_then(|client_connection| client_connection.on_disconnect())
+    }
+}
+
+// A holder type for when we combine backchannel messages and client messages into the same stream.
+enum ClientBackchannelCombinedMessage {
+    Backchannel(()),
+    ClientMessage(TimedConnectionItem<client::ClientMessage>),
+}
+
+/// I haven't found a good way with combinators to shut down the secondary stream once the primary
+/// stream closes. So this is a manually implemented stream that will report as complete whenever
+/// the primary reports as complete. This will let the stream end once the client disconnects.
+struct PrimarySecondaryStream<S1, S2> {
+    /// The important stream. Once this one ends, the combined stream ends.
+    primary: futures::stream::Fuse<S1>,
+    /// The less important stream. Even if this is still open, the combined stream will end.
+    secondary: futures::stream::Fuse<S2>,
+}
+
+impl<S1, S2> PrimarySecondaryStream<S1, S2>
+    where S1: Stream,
+          S2: Stream<Item = S1::Item, Error = S1::Error>
+{
+    /// Create a new combined stream.
+    fn new(primary: S1, secondary: S2) -> PrimarySecondaryStream<S1, S2> {
+        PrimarySecondaryStream {
+            primary: primary.fuse(),
+            secondary: secondary.fuse(),
+        }
+    }
+}
+
+impl<S1, S2> Stream for PrimarySecondaryStream<S1, S2>
+    where S1: Stream,
+          S2: Stream<Item = S1::Item, Error = S1::Error>,
+{
+    type Item = S1::Item;
+    type Error = S1::Error;
+
+    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
+        use futures::Async;
+
+        loop {
+            match self.primary.poll() {
+                Ok(Async::Ready(None)) => {
+                    // The primary stream has ended. Return the combined stream as ended.
+                    return Ok(Async::Ready(None))
+                },
+                Ok(Async::Ready(some)) => {
+                    // We have data. Go ahead and return it.
+                    return Ok(Async::Ready(some))
+                },
+                Ok(Async::NotReady) => {
+                    // The primary stream is not ready. Maybe the secondary stream is. Fall
+                    // through.
+                },
+                Err(e) => {
+                    // An error occurred. Return it.
+                    return Err(e);
+                }
+            }
+
+            match self.secondary.poll() {
+                Ok(Async::Ready(None)) => {
+                    // Primary just said it was not ready. Secondary says it's done. So we're
+                    // basically in primary-only mode, so return what primary returned.
+                    return Ok(Async::NotReady);
+                },
+                Ok(Async::Ready(some)) => {
+                    // Primary just said it was not ready. Secondary is ready. So return
+                    // secondary's data.
+                    return Ok(Async::Ready(some));
+                },
+                Ok(Async::NotReady) => {
+                    // Neither primary nor secondary are ready. So... not ready.
+                    return Ok(Async::NotReady);
+                },
+                Err(e) => {
+                    // An error occurred. Return it. Even though this isn't the primary, all errors
+                    // are important.
+                    return Err(e);
+                }
+            }
+        }
     }
 }
