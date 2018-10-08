@@ -21,7 +21,7 @@ Create the key for the server side of the connection. We should need only one.
 
 ## Server Key (redux)
 
-    openssl req -out server2.csr -key server.key -nodes -config server2.cnf
+    openssl req -new -out server2.csr -key server.key -nodes -config server2.cnf
     openssl x509 -req -in server2.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server2.crt -days 36500 -sha256 -extfile server2.cnf -extensions req_ext
 
 ```

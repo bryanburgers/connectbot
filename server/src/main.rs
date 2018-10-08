@@ -17,6 +17,7 @@ extern crate uuid;
 extern crate comms_shared;
 
 mod server;
+mod world;
 
 
 use clap::{Arg, App};
@@ -67,7 +68,8 @@ fn main() {
         .get_matches();
 
 
-    let server = server::Server::new();
+    let world = world::World::shared();
+    let server = server::Server::new(world.clone());
     let server_arc = Arc::new(server);
 
     let client_future = {

@@ -55,7 +55,7 @@ fn main() {
     println!("{:?}", pem);
     // config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
     config.root_store.add_pem_file(&mut pem).unwrap();
-    config.set_single_client_cert(load_certs("../client2.pem"), load_keys("../client.key").remove(0));
+    // config.set_single_client_cert(load_certs("../client2.pem"), load_keys("../client.key").remove(0));
     let arc_config = Arc::new(config);
     println!("three");
 
