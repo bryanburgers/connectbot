@@ -17,6 +17,8 @@ extern crate webpki_roots;
 
 mod ssh_connection;
 
+use clap::{Arg, App, SubCommand};
+
 use futures::{Future, Stream, Sink};
 use std::time::Duration;
 
@@ -46,6 +48,21 @@ fn load_keys(path: &str) -> Vec<PrivateKey> {
 }
 
 fn main() {
+    let matches = App::new("comms-client")
+        .version("1.0")
+        .author("Bryan Burgers <bryan@burgers.io>")
+        .about("The client")
+        .arg(Arg::with_name("id")
+             .short("i")
+             .long("id")
+             .value_name("IDENTIFIER")
+             .help("Set the unique identifier of the device")
+             .takes_value(true)
+             .required(true))
+        .get_matches();
+
+    let id = matches.value_of("id").unwrap().to_string();
+
     let addr = "[::1]:12321".parse().unwrap();
     // let addr = "167.99.112.36:443".parse().unwrap();
     let mut config = ClientConfig::new();
@@ -71,7 +88,7 @@ fn main() {
             let connector: TlsConnector = arc_config.clone().into();
             connector.connect(domain, stream)
         })
-        .and_then(|stream| {
+        .and_then(move |stream| {
             println!("this and_then");
             println!("{:?}", stream);
 
@@ -86,7 +103,8 @@ fn main() {
 
             tokio::spawn(rx.map(|message| { println!("↑ {:?}", message); message }).forward(sink).then(|result| {
                 if let Err(e) = result {
-                    panic!("failed to write to socket: {:?}", e)
+                    println!("Something happened: {:?}", e);
+                    // panic!("failed to write to socket: {:?}", e)
                 }
                 Ok(())
             }));
@@ -94,7 +112,7 @@ fn main() {
             let initialize_future = {
                 // Send the initialize message.
                 let mut initialize = client::Initialize::new();
-                initialize.set_id("7fa19923-b8f8-4fb6-81d3-3cc60ae7cbf2".into());
+                initialize.set_id(id.into());
                 initialize.set_comms_version("1.0".into());
                 let mut client_message = client::ClientMessage::new();
                 client_message.set_initialize(initialize);

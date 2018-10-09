@@ -57,6 +57,14 @@ pub struct ClientConnectionHandle {
     sender: Sender<()>,
 }
 
+impl ClientConnectionHandle {
+    pub fn disconnect(&self) -> impl Future<Item=(), Error=()> {
+        self.sender.clone().send(())
+            .map(|_| ())
+            .map_err(|_| ())
+    }
+}
+
 impl ClientConnection {
     /// Create a new client
     pub fn new(id: String, world: SharedWorld) -> ClientConnection {
@@ -108,9 +116,27 @@ impl ClientConnection {
 
             let mut initialize = message.take_initialize();
             let device_id = initialize.take_id().to_string();
+            let device_id_2 = device_id.clone();
 
             self.device_id = Some(device_id);
             // Update some thingses.
+
+            {
+                let mut world = self.world.write().unwrap();
+                world.devices.entry(device_id_2.clone())
+                    .and_modify(|device| {
+                        println!("{:?}", device);
+                        let previous_connection = std::mem::replace(&mut device.active_connection, Some(self.get_handle()));
+                        if let Some(previous_connection) = previous_connection {
+                            tokio::spawn(previous_connection.disconnect());
+                        }
+                    })
+                    .or_insert({
+                        let mut device = world::Device::new(&device_id_2.clone());
+                        device.active_connection = Some(self.get_handle());
+                        device
+                    });
+            }
         }
 
         /*
