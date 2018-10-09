@@ -18,6 +18,8 @@ use tokio_rustls::rustls;
 
 use super::world::{self, SharedWorld};
 
+use super::stream_helpers::{CancelableStream, CancelHandle, PrimarySecondaryStream};
+
 /// An active client connection that is currently being processed
 pub struct ClientConnection {
     /// The UUID of the *Connection* (not the client ID)
@@ -41,6 +43,8 @@ pub struct ClientConnection {
     device_id: Option<String>,
     /// The last time we received any message from this client
     last_message: Option<Instant>,
+    /// A handle that will cancel the stream
+    cancel_handle: Option<CancelHandle>,
 }
 
 /// A handle to an active client connection. Certain messages can be sent on this client's back
@@ -68,6 +72,7 @@ impl ClientConnection {
             back_channel: Some(receiver),
             device_id: None,
             last_message: None,
+            cancel_handle: None,
         }
     }
 
@@ -153,8 +158,12 @@ impl ClientConnection {
         Box::new(f)
     }
 
-    fn on_backchannel_message(self, message: ()) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+    fn on_backchannel_message(mut self, message: ()) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         println!("! {}: Received backchannel message {:?}", &self.id, message);
+
+        if let Some(cancel_handle) = std::mem::replace(&mut self.cancel_handle, None) {
+            cancel_handle.cancel().unwrap();
+        }
 
         Box::new(futures::future::ok(self))
     }
@@ -178,7 +187,6 @@ impl ClientConnection {
 
         futures::future::ok(())
     }
-
 
     /// Handle the TlsStream connection for this client. This consumes the client.
     pub fn handle_connection<S, C>(mut self, _addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
@@ -216,9 +224,11 @@ impl ClientConnection {
         let client_message_stream = client_message_stream.map(|item| ClientBackchannelCombinedMessage::ClientMessage(item));
         // let combined = client_message_stream.select(back_channel_stream);
         let combined = PrimarySecondaryStream::new(client_message_stream, back_channel_stream);
+        let (cancelable, cancel_handle) = CancelableStream::new(combined);
+        self.cancel_handle = Some(cancel_handle);
 
         // Then handle each message as it comes in.
-        combined.fold(self, |client_connection, message| {
+        cancelable.fold(self, |client_connection, message| {
             use self::ClientBackchannelCombinedMessage::*;
 
             match message {
@@ -235,82 +245,4 @@ impl ClientConnection {
 enum ClientBackchannelCombinedMessage {
     Backchannel(()),
     ClientMessage(TimedConnectionItem<client::ClientMessage>),
-}
-
-/// I haven't found a good way with combinators to shut down the secondary stream once the primary
-/// stream closes. So this is a manually implemented stream that will report as complete whenever
-/// the primary reports as complete. This will let the stream end once the client disconnects.
-struct PrimarySecondaryStream<S1, S2> {
-    /// The important stream. Once this one ends, the combined stream ends.
-    primary: futures::stream::Fuse<S1>,
-    /// The less important stream. Even if this is still open, the combined stream will end.
-    secondary: futures::stream::Fuse<S2>,
-}
-
-impl<S1, S2> PrimarySecondaryStream<S1, S2>
-    where S1: Stream,
-          S2: Stream<Item = S1::Item, Error = S1::Error>
-{
-    /// Create a new combined stream.
-    fn new(primary: S1, secondary: S2) -> PrimarySecondaryStream<S1, S2> {
-        PrimarySecondaryStream {
-            primary: primary.fuse(),
-            secondary: secondary.fuse(),
-        }
-    }
-}
-
-impl<S1, S2> Stream for PrimarySecondaryStream<S1, S2>
-    where S1: Stream,
-          S2: Stream<Item = S1::Item, Error = S1::Error>,
-{
-    type Item = S1::Item;
-    type Error = S1::Error;
-
-    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        use futures::Async;
-
-        loop {
-            match self.primary.poll() {
-                Ok(Async::Ready(None)) => {
-                    // The primary stream has ended. Return the combined stream as ended.
-                    return Ok(Async::Ready(None))
-                },
-                Ok(Async::Ready(some)) => {
-                    // We have data. Go ahead and return it.
-                    return Ok(Async::Ready(some))
-                },
-                Ok(Async::NotReady) => {
-                    // The primary stream is not ready. Maybe the secondary stream is. Fall
-                    // through.
-                },
-                Err(e) => {
-                    // An error occurred. Return it.
-                    return Err(e);
-                }
-            }
-
-            match self.secondary.poll() {
-                Ok(Async::Ready(None)) => {
-                    // Primary just said it was not ready. Secondary says it's done. So we're
-                    // basically in primary-only mode, so return what primary returned.
-                    return Ok(Async::NotReady);
-                },
-                Ok(Async::Ready(some)) => {
-                    // Primary just said it was not ready. Secondary is ready. So return
-                    // secondary's data.
-                    return Ok(Async::Ready(some));
-                },
-                Ok(Async::NotReady) => {
-                    // Neither primary nor secondary are ready. So... not ready.
-                    return Ok(Async::NotReady);
-                },
-                Err(e) => {
-                    // An error occurred. Return it. Even though this isn't the primary, all errors
-                    // are important.
-                    return Err(e);
-                }
-            }
-        }
-    }
 }

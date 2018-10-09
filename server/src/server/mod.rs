@@ -20,6 +20,7 @@ use uuid::Uuid;
 use super::world::{self, SharedWorld};
 
 pub mod client_connection;
+mod stream_helpers;
 
 use self::client_connection::ClientConnection;
 
