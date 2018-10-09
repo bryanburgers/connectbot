@@ -36,11 +36,11 @@ pub struct ClientConnection {
     rx: Option<Receiver<client::ServerMessage>>,
     /// The channel which other things (especially the ClientConnectionHandle) can use to send
     /// back-channel messages to this client.
-    back_channel_sender: Sender<()>,
+    back_channel_sender: Sender<BackchannelMessage>,
     /// Temporary storage for the backchannel receiver. Once the connection starts, this will be
     /// taken and replaced with None, so it is mostly useless except to temporarily store it before
     /// the connection starts.
-    back_channel: Option<Receiver<()>>,
+    back_channel: Option<Receiver<BackchannelMessage>>,
     /// The device ID for this client
     device_id: Option<String>,
     /// The last time we received any message from this client
@@ -56,12 +56,12 @@ pub struct ClientConnectionHandle {
     /// The UUID of the *Connection* (not the client)
     id: String,
     /// The backchannel
-    sender: Sender<()>,
+    sender: Sender<BackchannelMessage>,
 }
 
 impl ClientConnectionHandle {
     pub fn disconnect(&self) -> impl Future<Item=(), Error=()> {
-        self.sender.clone().send(())
+        self.sender.clone().send(BackchannelMessage::Disconnect)
             .map(|_| ())
             .map_err(|_| ())
     }
@@ -186,14 +186,18 @@ impl ClientConnection {
         Box::new(f)
     }
 
-    fn on_backchannel_message(mut self, message: ()) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+    fn on_backchannel_message(mut self, message: BackchannelMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         println!("! {}: Received backchannel message {:?}", &self.id, message);
 
-        if let Some(cancel_handle) = std::mem::replace(&mut self.cancel_handle, None) {
-            cancel_handle.cancel().unwrap();
-        }
+        match message {
+            BackchannelMessage::Disconnect => {
+                if let Some(cancel_handle) = std::mem::replace(&mut self.cancel_handle, None) {
+                    cancel_handle.cancel().unwrap();
+                }
 
-        Box::new(futures::future::ok(self))
+                Box::new(futures::future::ok(self))
+            }
+        }
     }
 
     fn on_disconnect(self) -> impl Future<Item=(), Error=std::io::Error> {
@@ -283,6 +287,11 @@ impl ClientConnection {
 
 // A holder type for when we combine backchannel messages and client messages into the same stream.
 enum ClientBackchannelCombinedMessage {
-    Backchannel(()),
+    Backchannel(BackchannelMessage),
     ClientMessage(TimedConnectionItem<client::ClientMessage>),
+}
+
+#[derive(Debug)]
+enum BackchannelMessage {
+    Disconnect,
 }
