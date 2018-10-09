@@ -30,7 +30,7 @@ use std::fs::{self, File};
 use tokio_rustls::{
     ServerConfigExt,
     rustls::{
-        Certificate, PrivateKey, ServerConfig, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
+        Certificate, PrivateKey, ServerConfig, NoClientAuth, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
         internal::pemfile::{ certs, rsa_private_keys }
     },
 };
@@ -60,6 +60,24 @@ fn main() {
              .help("The address to use to communicate on the control socket")
              .takes_value(true)
              .default_value("[::0]:12345"))
+        .arg(Arg::with_name("ca")
+             .long("ca")
+             .value_name("FILE")
+             .help("The location of the Certificate Authority pem/crt to use when authenticating clients. If this is not set, client-authentication is disabled")
+             .takes_value(true)
+             .required(false))
+        .arg(Arg::with_name("cert")
+             .long("cert")
+             .value_name("FILE")
+             .help("The location of the TLS certificate file (pem)")
+             .takes_value(true)
+             .required(true))
+        .arg(Arg::with_name("key")
+             .long("key")
+             .value_name("FILE")
+             .help("The location of the TLS key file (rsa)")
+             .takes_value(true)
+             .required(true))
         .get_matches();
 
 
@@ -67,16 +85,23 @@ fn main() {
     let server = server::Server::new(world.clone());
     let server_arc = Arc::new(server);
 
+
     let client_future = {
         let addr = matches.value_of("address").unwrap();
         let socket_addr = addr.parse().unwrap();
+        let cert_file = matches.value_of("cert").unwrap();
+        let key_file = matches.value_of("key").unwrap();
 
-        // let mut config = ServerConfig::new(NoClientAuth::new());
-        let mut cert_store = RootCertStore::empty();
-        let mut pem = BufReader::new(fs::File::open("../ca.crt").unwrap());
-        cert_store.add_pem_file(&mut pem).unwrap();
-        let mut config = ServerConfig::new(AllowAnyAnonymousOrAuthenticatedClient::new(cert_store));
-        config.set_single_cert(load_certs("../server2.pem"), load_keys("../server.key").remove(0))
+        let mut config = if let Some(ca) = matches.value_of("ca") {
+            let mut cert_store = RootCertStore::empty();
+            let mut pem = BufReader::new(fs::File::open(ca).expect("Unable to open specified CA file"));
+            cert_store.add_pem_file(&mut pem).unwrap();
+            ServerConfig::new(AllowAnyAnonymousOrAuthenticatedClient::new(cert_store))
+        }
+        else {
+            ServerConfig::new(NoClientAuth::new())
+        };
+        config.set_single_cert(load_certs(cert_file), load_keys(key_file).remove(0))
             .expect("invalid key or certificate");
 
         let arc_config = Arc::new(config);
