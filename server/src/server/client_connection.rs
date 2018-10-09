@@ -96,7 +96,9 @@ impl ClientConnection {
     }
 
     fn on_client_message(mut self, mut message: client::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
-        println!("↑ {}: {:?}", &self.id, message);
+        if !message.has_ping() && !message.has_pong() {
+            println!("↑ {}: {:?}", &self.id, message);
+        }
 
         self.last_message = Some(Instant::now());
 
@@ -251,7 +253,12 @@ impl ClientConnection {
         let rx = std::mem::replace(&mut self.rx, None);
         let rx = rx.unwrap().map_err(|_| panic!());
         let connection_id = self.id.clone();
-        let rx_forward = rx.map(move |message| { println!("↓ {}: {:?}", connection_id, message); message })
+        let rx_forward = rx.map(move |message| {
+            if !message.has_ping() && !message.has_pong() {
+                println!("↓ {}: {:?}", connection_id, message);
+            }
+            message
+        })
             .forward(client_message_sink)
             .then(|result| {
                 if let Err(e) = result {

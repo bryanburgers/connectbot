@@ -53,13 +53,13 @@ fn main() {
              .long("address")
              .help("The address to use to accept client connections")
              .takes_value(true)
-             .default_value("[::0]:12321"))
+             .default_value("[::]:12321"))
         .arg(Arg::with_name("control-address")
              .short("c")
              .long("control-address")
              .help("The address to use to communicate on the control socket")
              .takes_value(true)
-             .default_value("[::0]:12345"))
+             .default_value("[::1]:12345"))
         .arg(Arg::with_name("ca")
              .long("ca")
              .value_name("FILE")
@@ -107,6 +107,7 @@ fn main() {
         let arc_config = Arc::new(config);
 
         let listener = TcpListener::bind(&socket_addr).unwrap();
+        println!("Client channel listening on {}", &socket_addr);
         let server = server_arc.clone();
         let future = listener.incoming().for_each(move |connection| {
             let addr = connection.peer_addr().unwrap();
@@ -140,6 +141,7 @@ fn main() {
         let addr = matches.value_of("control-address").unwrap();
         let socket_addr = addr.parse().unwrap();
         let listener = TcpListener::bind(&socket_addr).unwrap();
+        println!("Control channel listening on {}", &socket_addr);
         let server = server_arc.clone();
         let future = listener.incoming().for_each(move |connection| {
             let future = server.handle_control_connection(connection)

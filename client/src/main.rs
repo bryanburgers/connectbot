@@ -53,6 +53,12 @@ fn main() {
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
         .about("The client")
+        .arg(Arg::with_name("address")
+             .long("address")
+             .value_name("IP:PORT")
+             .help("The IP and port of the server. If IPv6, the IP must be surrounded by braces. E.g. 1.2.3.4:1000 or [::ae59]:1000")
+             .takes_value(true)
+             .required(true))
         .arg(Arg::with_name("ca")
              .long("ca")
              .value_name("FILE")
@@ -86,7 +92,8 @@ fn main() {
 
     let id = matches.value_of("id").unwrap().to_string();
 
-    let addr = "[::1]:12321".parse().unwrap();
+    let addr = matches.value_of("address").unwrap().parse().expect("Invalid server address");
+    // let addr = "[::1]:12321".parse().unwrap();
     // let addr = "167.99.112.36:443".parse().unwrap();
     let mut config = ClientConfig::new();
     if let Some(ca) = matches.value_of("ca") {
@@ -260,18 +267,25 @@ fn connect(id: String, addr: SocketAddr, domain: String, arc_config: Arc<ClientC
             let framed = tokio_codec::Decoder::framed(codec, stream);
             let (sink, stream) = framed.split();
 
-            let (tx, rx) = futures::sync::mpsc::channel(0);
+            let (tx, rx): (futures::sync::mpsc::Sender<client::ClientMessage>, futures::sync::mpsc::Receiver<client::ClientMessage>) = futures::sync::mpsc::channel(0);
 
             let sink = sink.sink_map_err(|_| ());
             let rx = rx.map_err(|_| panic!());
 
-            tokio::spawn(rx.map(|message| { println!("↑ {:?}", message); message }).forward(sink).then(|result| {
-                if let Err(e) = result {
-                    println!("Something happened: {:?}", e);
-                    // panic!("failed to write to socket: {:?}", e)
+            tokio::spawn(rx.map(|message| {
+                if !message.has_ping() && !message.has_pong() {
+                    println!("↑ {:?}", message);
                 }
-                Ok(())
-            }));
+                message
+            })
+                .forward(sink)
+                .then(|result| {
+                    if let Err(e) = result {
+                        println!("Something happened: {:?}", e);
+                        // panic!("failed to write to socket: {:?}", e)
+                    }
+                    Ok(())
+                }));
 
             let initialize_future = {
                 // Send the initialize message.
@@ -296,7 +310,9 @@ fn connect(id: String, addr: SocketAddr, domain: String, arc_config: Arc<ClientC
             let stream_future = stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
                 match message {
                     TimedConnectionItem::Item(message) => {
-                        println!("↓ {:?}", message);
+                        if !message.has_ping() && !message.has_pong() {
+                            println!("↓ {:?}", message);
+                        }
 
                         if message.has_ping() {
                             let pong = client::Pong::new();

@@ -1,0 +1,11 @@
+FROM dlecan/rust-crosscompiler-arm:stable
+
+RUN apt-get update \
+ && apt-get install -y \
+      bash \
+      ca-certificates \
+      unzip \
+      wget \
+ && wget https://github.com/google/protobuf/releases/download/v3.5.0/protoc-3.5.0-linux-x86_64.zip \
+ && unzip -d /usr protoc-3.5.0-linux-x86_64.zip \
+ && rm -rf /var/lib/apt/lists/*
