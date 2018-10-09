@@ -88,7 +88,6 @@ fn main() {
             let server = server.clone();
             arc_config.accept_async(connection)
                 .and_then(move |stream| {
-                    println!("{:?}", stream);
                     // {
                     //     let (_, s) = stream.get_ref();
                     //     let certs = s.get_peer_certificates();

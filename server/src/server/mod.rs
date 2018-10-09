@@ -5,9 +5,7 @@ use tokio_timer::Interval;
 use tokio_codec;
 use futures::{self, Stream, Sink, Future};
 
-use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::net::SocketAddr;
 
 use comms_shared::codec::Codec;
@@ -26,58 +24,33 @@ use self::client_connection::ClientConnection;
 
 pub struct Server {
     world: SharedWorld,
-    state: Arc<RwLock<HashMap<String, Connection>>>,
-}
-
-/// Information about a connected (or unconnected) client.
-#[derive(Debug)]
-pub struct Connection {
-    connection_id: String,
-    address: SocketAddr,
-    connected: Instant,
-    last_message: Option<Instant>,
 }
 
 impl Server {
     pub fn new(world: world::SharedWorld) -> Server {
-        let state = HashMap::new();
-
         Server {
             world: world,
-            state: Arc::new(RwLock::new(state)),
         }
     }
 
     pub fn periodic_cleanup(&self) -> impl Future<Item=(), Error=std::io::Error> {
-        let state = self.state.clone();
-        let world = self.world.clone();
+        // let world = self.world.clone();
         Interval::new_interval(Duration::from_millis(1_000)).for_each(move |_| {
-            let now = Instant::now();
-            {
-                let mut hash_map = state.write().unwrap();
-                hash_map.retain(move |_, v| {
-                    if let Some(last_message) = v.last_message {
-                        now.duration_since(last_message).as_secs() < 10
-                    }
-                    else {
-                        true
-                    }
-                });
-            }
-
+            /*
             {
                 let mut world = world.write().unwrap();
                 world.devices.retain(move |_, _v| {
                     true
                 });
             }
+            */
 
             futures::future::ok(())
         })
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Interval failed: {}", e)))
     }
 
-    pub fn handle_client_connection<S, C>(&self, addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
+    pub fn handle_client_connection<S, C>(&self, addr: SocketAddr, stream: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
         where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
               C: rustls::Session + 'static,
     {
@@ -86,35 +59,8 @@ impl Server {
         let uuid = format!("{}", uuid);
         println!("! {}: connected from {}", uuid, &addr.ip());
 
-        // Mark the connection time.
-        {
-            let mut hash_map = self.state.write().unwrap();
-            hash_map.entry(uuid.clone())
-                .and_modify(|client| {
-                    client.connected = Instant::now();
-                }).or_insert(Connection {
-                    connection_id: uuid.clone(),
-                    address: addr.clone(),
-                    connected: Instant::now(),
-                    last_message: None,
-                });
-        }
-
-        {
-            let mut world = self.world.write().unwrap();
-            world.devices.entry(uuid.clone())
-                .and_modify(|device| {
-                    device.connection_status = world::ConnectionStatus::Connected { address: addr.ip() };
-                }).or_insert({
-                    let mut device = world::Device::new(&uuid.clone());
-                    device.connection_status = world::ConnectionStatus::Connected { address: addr.ip() };
-                    device
-                });
-        }
-
-        let connection = ClientConnection::new(uuid.clone(), self.world.clone());
-        let _connection_handle = connection.get_handle();
-        connection.handle_connection(addr, conn)
+        let connection = ClientConnection::new(uuid.clone(), addr, self.world.clone());
+        connection.handle_connection(stream)
     }
 
     pub fn handle_control_connection(&self, conn: TcpStream) -> impl Future<Item=(), Error=std::io::Error> {
@@ -135,22 +81,21 @@ impl Server {
             Ok(())
         }));
 
-        let state = self.state.clone();
+        let world = self.world.clone();
 
         stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
             println!("{:?}", message);
             if message.has_clients_request() {
                 let mut clients = Vec::new();
                 {
-                    let hash_map = state.read().unwrap();
-                    for client in hash_map.values() {
+                    let world = world.read().unwrap();
+                    for device in world.devices.values() {
                         // println!("{:?} {:?}", key, value);
                         let mut client_data = control::ClientsResponse_Client::new();
-                        client_data.set_id(client.connection_id.clone().into());
-                        // TODO: This should be the IpAddr, not the SocketAddr. But I'm on a plane
-                        // and can't look up how to get just the IpAddr part from the SocketAddr
-                        // part.
-                        client_data.set_address(client.address.to_string().into());
+                        client_data.set_id(device.id.clone().into());
+                        if let world::ConnectionStatus::Connected { ref address } = device.connection_status {
+                            client_data.set_address(address.to_string().into());
+                        }
                         clients.push(client_data);
                     }
                 }

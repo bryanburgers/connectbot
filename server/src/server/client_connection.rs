@@ -26,6 +26,8 @@ pub struct ClientConnection {
     id: String,
     /// The state of the entire World
     world: SharedWorld,
+    /// The IP address of the connection
+    address: SocketAddr,
     /// The channel on which to send messages back to the client
     tx: Sender<client::ServerMessage>,
     /// Temporary storage for the receiver. Once the connection starts, this will be taken and
@@ -67,13 +69,14 @@ impl ClientConnectionHandle {
 
 impl ClientConnection {
     /// Create a new client
-    pub fn new(id: String, world: SharedWorld) -> ClientConnection {
+    pub fn new(id: String, addr: SocketAddr, world: SharedWorld) -> ClientConnection {
         let (sender, receiver) = channel(3);
         let (tx, rx) = futures::sync::mpsc::channel(0);
 
         ClientConnection {
             id: id,
             world: world,
+            address: addr,
             tx: tx,
             rx: Some(rx),
             back_channel_sender: sender,
@@ -112,8 +115,6 @@ impl ClientConnection {
         }
 
         if message.has_initialize() {
-            println!("Initialized!");
-
             let mut initialize = message.take_initialize();
             let device_id = initialize.take_id().to_string();
             let device_id_2 = device_id.clone();
@@ -125,7 +126,7 @@ impl ClientConnection {
                 let mut world = self.world.write().unwrap();
                 world.devices.entry(device_id_2.clone())
                     .and_modify(|device| {
-                        println!("{:?}", device);
+                        device.connection_status = world::ConnectionStatus::Connected { address: self.address.ip() };
                         let previous_connection = std::mem::replace(&mut device.active_connection, Some(self.get_handle()));
                         if let Some(previous_connection) = previous_connection {
                             tokio::spawn(previous_connection.disconnect());
@@ -134,6 +135,7 @@ impl ClientConnection {
                     .or_insert({
                         let mut device = world::Device::new(&device_id_2.clone());
                         device.active_connection = Some(self.get_handle());
+                        device.connection_status = world::ConnectionStatus::Connected { address: self.address.ip() };
                         device
                     });
             }
@@ -206,7 +208,19 @@ impl ClientConnection {
             let mut world = world.write().unwrap();
             world.devices.entry(device_id.clone())
                 .and_modify(|device| {
-                    device.connection_status = world::ConnectionStatus::Disconnected { last_seen: last_message };
+                    if let Some(ref active_connection) = device.active_connection {
+                        // If there is an active connection, only disconnect if the active
+                        // connection is the current connection. Otherwise, our connection was
+                        // replaced by a different connection, and so we don't want to replace THAT
+                        // connection status with disconnected.
+                        if active_connection.id == device_id {
+                            device.connection_status = world::ConnectionStatus::Disconnected { last_seen: last_message };
+                        }
+                    }
+                    else {
+                        // There is no active connection. Mark as disconnected.
+                        device.connection_status = world::ConnectionStatus::Disconnected { last_seen: last_message };
+                    }
                 });
             println!("! {}: Disconnect {}", uuid, device_id);
         }
@@ -215,7 +229,7 @@ impl ClientConnection {
     }
 
     /// Handle the TlsStream connection for this client. This consumes the client.
-    pub fn handle_connection<S, C>(mut self, _addr: SocketAddr, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
+    pub fn handle_connection<S, C>(mut self, conn: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
         where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
               C: rustls::Session + 'static,
     {
