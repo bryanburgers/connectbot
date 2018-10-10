@@ -53,7 +53,7 @@ fn main() {
              .long("address")
              .help("The address to use to accept client connections")
              .takes_value(true)
-             .default_value("[::]:12321"))
+             .default_value("[::]:4004"))
         .arg(Arg::with_name("control-address")
              .short("c")
              .long("control-address")
