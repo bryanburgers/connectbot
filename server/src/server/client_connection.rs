@@ -204,7 +204,7 @@ impl ClientConnection {
             let last_message = self.last_message.unwrap();
 
             let mut world = world.write().unwrap();
-            world.disconnect_device(&device_id, last_message);
+            world.disconnect_device(&device_id, &uuid, last_message);
             println!("! {}: Disconnect {}", uuid, device_id);
         }
 

@@ -29,6 +29,10 @@ impl World {
         Arc::new(RwLock::new(World::new()))
     }
 
+    /// Mark the device with the given connection handle as connected.
+    ///
+    /// Returns the previous connection handle, if one existed. (This makes it possible to
+    /// disconnect the previous connection handle, if necessary.)
     pub fn connect_device(&mut self, id: &str, handle: ClientConnectionHandle, address: &SocketAddr) -> Option<ClientConnectionHandle> {
         let device = self.devices.entry(id.to_string())
             .or_insert_with(|| {
@@ -39,8 +43,9 @@ impl World {
         std::mem::replace(&mut device.active_connection, Some(handle))
     }
 
-    pub fn disconnect_device(&mut self, id: &str, last_message: Instant) {
-        let entry = self.devices.entry(id.to_string());
+    /// Mark a device as disconnected
+    pub fn disconnect_device(&mut self, device_id: &str, connection_id: &str, last_message: Instant) {
+        let entry = self.devices.entry(device_id.to_string());
         let entry = match entry {
             // We're disconnecting an already connected device. We definitely expect there to be an
             // entry in our world.
@@ -54,7 +59,7 @@ impl World {
             // connection is the current connection. Otherwise, our connection was
             // replaced by a different connection, and so we don't want to replace THAT
             // connection status with disconnected.
-            if active_connection.get_id() == id {
+            if active_connection.get_id() == connection_id {
                 device.connection_status = ConnectionStatus::Disconnected { last_seen: last_message };
             }
         }
@@ -81,7 +86,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn new(id: &str) -> Device {
+    fn new(id: &str) -> Device {
         Device {
             id: id.to_owned(),
             name: id.to_owned(),
