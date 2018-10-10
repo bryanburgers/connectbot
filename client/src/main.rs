@@ -131,7 +131,7 @@ fn main() {
 
     let id = matches.value_of("id").unwrap().to_string();
 
-    let address = matches.value_of("address").unwrap().to_string();
+    let address = matches.value_of("host").unwrap().to_string();
     let port = matches.value_of("port").unwrap().parse().unwrap();
     let connection = if let Some(resolve) = matches.value_of("resolve") {
         let resolve = resolve.parse().unwrap();
