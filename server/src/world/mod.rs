@@ -40,6 +40,7 @@ impl World {
             });
 
         device.connection_status = ConnectionStatus::Connected { address: address.ip() };
+        device.connection_history.connect(Instant::now());
         std::mem::replace(&mut device.active_connection, Some(handle))
     }
 
@@ -61,11 +62,13 @@ impl World {
             // connection status with disconnected.
             if active_connection.get_id() == connection_id {
                 device.connection_status = ConnectionStatus::Disconnected { last_seen: last_message };
+                device.connection_history.disconnect(last_message);
             }
         }
         else {
             // There is no active connection. Mark as disconnected.
             device.connection_status = ConnectionStatus::Disconnected { last_seen: last_message };
+            device.connection_history.disconnect(last_message);
         }
     }
 }
@@ -83,6 +86,8 @@ pub struct Device {
     pub ssh_forwards: HashMap<String, SshForward>,
     /// If there is an active connection for the device, a handle to that connection.
     pub active_connection: Option<ClientConnectionHandle>,
+    /// Connection history
+    pub connection_history: ConnectionHistory,
 }
 
 impl Device {
@@ -93,8 +98,57 @@ impl Device {
             connection_status: ConnectionStatus::Unknown,
             ssh_forwards: HashMap::new(),
             active_connection: None,
+            connection_history: ConnectionHistory::new(),
         }
     }
+}
+
+/// A history of the times in recent memory that the device has been connected.
+#[derive(Debug)]
+pub struct ConnectionHistory(Vec<ConnectionHistoryItem>);
+
+impl ConnectionHistory {
+    pub fn new() -> ConnectionHistory {
+        ConnectionHistory(Vec::new())
+    }
+
+    pub fn connect(&mut self, now: Instant) {
+        let len = self.0.len();
+
+        if len > 0 {
+            let push = match &self.0[len - 1] {
+                ConnectionHistoryItem::Open(_) => false,
+                ConnectionHistoryItem::Closed(_, _) => true,
+            };
+            if push {
+                self.0.push(ConnectionHistoryItem::Open(now))
+            }
+        }
+        else {
+            // No items in the list. Add ours.
+            self.0.push(ConnectionHistoryItem::Open(now));
+        }
+    }
+
+    pub fn disconnect(&mut self, now: Instant) {
+        // TODO: make sure an item actually exists
+        let r = self.0.pop().unwrap();
+        self.0.push(match r {
+            // If there was an open interval, close it.
+            ConnectionHistoryItem::Open(start) => ConnectionHistoryItem::Closed(start, now),
+            // If there was a closed interval... well that's curious, but do nothing.
+            a => a,
+        });
+    }
+}
+
+/// A single connection history event
+#[derive(Debug)]
+pub enum ConnectionHistoryItem {
+    /// A period of time in the past when the device was connected.
+    Closed(Instant, Instant),
+    /// The device is currently connected, and that connection started at the given time.
+    Open(Instant),
 }
 
 /// Information about a single ssh forwarding
