@@ -16,7 +16,7 @@ use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, Timed
 use tokio_rustls::TlsStream;
 use tokio_rustls::rustls;
 
-use super::world::{self, SharedWorld};
+use super::world::SharedWorld;
 
 use super::stream_helpers::{CancelableStream, CancelHandle, PrimarySecondaryStream};
 
@@ -64,6 +64,10 @@ impl ClientConnectionHandle {
         self.sender.clone().send(BackchannelMessage::Disconnect)
             .map(|_| ())
             .map_err(|_| ())
+    }
+
+    pub fn get_id(&self) -> &str {
+        &self.id
     }
 }
 
@@ -119,27 +123,15 @@ impl ClientConnection {
         if message.has_initialize() {
             let mut initialize = message.take_initialize();
             let device_id = initialize.take_id().to_string();
-            let device_id_2 = device_id.clone();
 
-            self.device_id = Some(device_id);
-            // Update some thingses.
+            self.device_id = Some(device_id.clone());
 
-            {
+            let previous_connection = {
                 let mut world = self.world.write().unwrap();
-                world.devices.entry(device_id_2.clone())
-                    .and_modify(|device| {
-                        device.connection_status = world::ConnectionStatus::Connected { address: self.address.ip() };
-                        let previous_connection = std::mem::replace(&mut device.active_connection, Some(self.get_handle()));
-                        if let Some(previous_connection) = previous_connection {
-                            tokio::spawn(previous_connection.disconnect());
-                        }
-                    })
-                    .or_insert({
-                        let mut device = world::Device::new(&device_id_2.clone());
-                        device.active_connection = Some(self.get_handle());
-                        device.connection_status = world::ConnectionStatus::Connected { address: self.address.ip() };
-                        device
-                    });
+                world.connect_device(&device_id, self.get_handle(), &self.address)
+            };
+            if let Some(previous_connection) = previous_connection {
+                tokio::spawn(previous_connection.disconnect());
             }
         }
 
@@ -212,22 +204,7 @@ impl ClientConnection {
             let last_message = self.last_message.unwrap();
 
             let mut world = world.write().unwrap();
-            world.devices.entry(device_id.clone())
-                .and_modify(|device| {
-                    if let Some(ref active_connection) = device.active_connection {
-                        // If there is an active connection, only disconnect if the active
-                        // connection is the current connection. Otherwise, our connection was
-                        // replaced by a different connection, and so we don't want to replace THAT
-                        // connection status with disconnected.
-                        if active_connection.id == device_id {
-                            device.connection_status = world::ConnectionStatus::Disconnected { last_seen: last_message };
-                        }
-                    }
-                    else {
-                        // There is no active connection. Mark as disconnected.
-                        device.connection_status = world::ConnectionStatus::Disconnected { last_seen: last_message };
-                    }
-                });
+            world.disconnect_device(&device_id, last_message);
             println!("! {}: Disconnect {}", uuid, device_id);
         }
 
