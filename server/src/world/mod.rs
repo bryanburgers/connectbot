@@ -45,7 +45,7 @@ impl World {
     }
 
     /// Mark a device as disconnected
-    pub fn disconnect_device(&mut self, device_id: &str, connection_id: &str, last_message: Instant) {
+    pub fn disconnect_device(&mut self, device_id: &str, connection_id: usize, last_message: Instant) {
         let entry = self.devices.entry(device_id.to_string());
         let entry = match entry {
             // We're disconnecting an already connected device. We definitely expect there to be an

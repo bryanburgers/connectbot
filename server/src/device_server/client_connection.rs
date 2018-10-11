@@ -23,7 +23,7 @@ use super::stream_helpers::{CancelableStream, CancelHandle, PrimarySecondaryStre
 /// An active client connection that is currently being processed
 pub struct ClientConnection {
     /// The UUID of the *Connection* (not the client ID)
-    id: String,
+    id: usize,
     /// The state of the entire World
     world: SharedWorld,
     /// The IP address of the connection
@@ -54,7 +54,7 @@ pub struct ClientConnection {
 #[derive(Debug)]
 pub struct ClientConnectionHandle {
     /// The UUID of the *Connection* (not the client)
-    id: String,
+    id: usize,
     /// The backchannel
     sender: Sender<BackchannelMessage>,
 }
@@ -66,14 +66,14 @@ impl ClientConnectionHandle {
             .map_err(|_| ())
     }
 
-    pub fn get_id(&self) -> &str {
-        &self.id
+    pub fn get_id(&self) -> usize {
+        self.id
     }
 }
 
 impl ClientConnection {
     /// Create a new client
-    pub fn new(id: String, addr: SocketAddr, world: SharedWorld) -> ClientConnection {
+    pub fn new(id: usize, addr: SocketAddr, world: SharedWorld) -> ClientConnection {
         let (sender, receiver) = channel(3);
         let (tx, rx) = futures::sync::mpsc::channel(0);
 
@@ -101,7 +101,7 @@ impl ClientConnection {
 
     fn on_client_message(mut self, mut message: client::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
-            println!("↑ {}: {:?}", &self.id, message);
+            println!("↑ {:4}: {:?}", &self.id, message);
         }
 
         self.last_message = Some(Instant::now());
@@ -181,7 +181,7 @@ impl ClientConnection {
     }
 
     fn on_backchannel_message(mut self, message: BackchannelMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
-        println!("! {}: Received backchannel message {:?}", &self.id, message);
+        println!("! {:4}: Received backchannel message {:?}", &self.id, message);
 
         match message {
             BackchannelMessage::Disconnect => {
@@ -195,7 +195,7 @@ impl ClientConnection {
     }
 
     fn on_disconnect(self) -> impl Future<Item=(), Error=std::io::Error> {
-        let uuid = self.id;
+        let client_id = self.id;
         let world = self.world.clone();
 
         if let Some(device_id) = self.device_id {
@@ -204,8 +204,8 @@ impl ClientConnection {
             let last_message = self.last_message.unwrap();
 
             let mut world = world.write().unwrap();
-            world.disconnect_device(&device_id, &uuid, last_message);
-            println!("! {}: Disconnect {}", uuid, device_id);
+            world.disconnect_device(&device_id, client_id, last_message);
+            println!("! {:4}: Disconnect {}", client_id, device_id);
         }
 
         futures::future::ok(())
@@ -232,7 +232,7 @@ impl ClientConnection {
         let connection_id = self.id.clone();
         let rx_forward = rx.map(move |message| {
             if !message.has_ping() && !message.has_pong() {
-                println!("↓ {}: {:?}", connection_id, message);
+                println!("↓ {:4}: {:?}", connection_id, message);
             }
             message
         })

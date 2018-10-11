@@ -12,7 +12,6 @@ use tokio_rustls::{
         self, ServerConfig,
     },
 };
-use uuid::Uuid;
 
 use super::world::{self, SharedWorld};
 
@@ -22,6 +21,7 @@ mod stream_helpers;
 use self::client_connection::ClientConnection;
 
 pub struct Server {
+    next_connection_id: usize,
     world: SharedWorld,
 }
 
@@ -29,6 +29,7 @@ impl Server {
     pub fn new(world: world::SharedWorld) -> Server {
         Server {
             world: world,
+            next_connection_id: 1,
         }
     }
 
@@ -39,7 +40,7 @@ impl Server {
         println!("Client channel listening on {}", &socket_addr);
         let future = listener.incoming()
             .map_err(|err| println!("Incoming error: {}", err))
-            .fold(self, move |server, connection| {
+            .fold(self, move |mut server, connection| {
                 let addr = connection.peer_addr().unwrap();
                 // let server = server.clone();
                 arc_config.accept_async(connection)
@@ -51,7 +52,9 @@ impl Server {
                                 //     let certs = s.get_peer_certificates();
                                 //     println!("{:?}", certs);
                                 // }
-                                let future = server.handle_client_connection(addr, stream)
+                                let connection_id = server.next_connection_id;
+                                server.next_connection_id = server.next_connection_id.wrapping_add(1);
+                                let future = server.handle_client_connection(connection_id, addr, stream)
                                     .map_err(|e| println!("Warning: {}", e));
 
                                 tokio::spawn(future);
@@ -71,16 +74,13 @@ impl Server {
         future
     }
 
-    pub fn handle_client_connection<S, C>(&self, addr: SocketAddr, stream: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
+    pub fn handle_client_connection<S, C>(&self, connection_id: usize, addr: SocketAddr, stream: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
         where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
               C: rustls::Session + 'static,
     {
+        println!("! {:4}: connected from {}", connection_id, &addr.ip());
 
-        let uuid = Uuid::new_v4();
-        let uuid = format!("{}", uuid);
-        println!("! {}: connected from {}", uuid, &addr.ip());
-
-        let connection = ClientConnection::new(uuid.clone(), addr, self.world.clone());
+        let connection = ClientConnection::new(connection_id, addr, self.world.clone());
         connection.handle_connection(stream)
     }
 }
