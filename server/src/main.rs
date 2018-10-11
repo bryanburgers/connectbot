@@ -23,13 +23,11 @@ mod world;
 use clap::{Arg, App};
 use tokio::net::TcpListener;
 use futures::{Future, Stream};
-use std::sync::Arc;
 
 use std::io::BufReader;
 use std::fs::{self, File};
 
 use tokio_rustls::{
-    ServerConfigExt,
     rustls::{
         Certificate, PrivateKey, ServerConfig, NoClientAuth, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
         internal::pemfile::{ certs, rsa_private_keys }
@@ -85,7 +83,6 @@ fn main() {
     let world = world::World::shared();
     let control_server = control_server::Server::new(world.clone());
     let device_server = device_server::Server::new(world.clone());
-    let device_server = Arc::new(device_server);
 
     let device_server_future = {
         let addr = matches.value_of("address").unwrap();
@@ -105,37 +102,8 @@ fn main() {
         config.set_single_cert(load_certs(cert_file), load_keys(key_file).remove(0))
             .expect("invalid key or certificate");
 
-        let arc_config = Arc::new(config);
-
-        let listener = TcpListener::bind(&socket_addr).unwrap();
-        println!("Client channel listening on {}", &socket_addr);
-        let server = device_server.clone();
-        let future = listener.incoming().for_each(move |connection| {
-            let addr = connection.peer_addr().unwrap();
-            let server = server.clone();
-            arc_config.accept_async(connection)
-                .and_then(move |stream| {
-                    // {
-                    //     let (_, s) = stream.get_ref();
-                    //     let certs = s.get_peer_certificates();
-                    //     println!("{:?}", certs);
-                    // }
-                    let future = server.handle_client_connection(addr, stream)
-                        .map_err(|e| println!("Warning: {}", e));
-
-                    tokio::spawn(future);
-
-                    Ok(())
-                })
-                .or_else(|err| {
-                    println!("Connection failed: {}", err);
-
-                    futures::future::ok(())
-                })
-        })
-            .map_err(|e| println!("Error: {}", e));
-
-        future
+        device_server.listen(socket_addr, config)
+            .map(|_server| ())
     };
 
     let control_server_future = {
