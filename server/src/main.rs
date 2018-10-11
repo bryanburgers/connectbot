@@ -46,7 +46,7 @@ fn load_keys(path: &str) -> Vec<PrivateKey> {
 }
 
 fn main() {
-    let matches = App::new("comms-server")
+    let matches = App::new("connectbot-server")
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
         .about("Communications")
@@ -129,7 +129,7 @@ fn main() {
 
     let cleanup_future = {
         let _world = world.clone();
-        Interval::new_interval(Duration::from_millis(1_000)).for_each(move |_| {
+        Interval::new_interval(Duration::from_secs(30)).for_each(move |_| {
             let mut world = world.write().unwrap();
 
             world.cleanup(Utc::now());
@@ -137,39 +137,6 @@ fn main() {
             Ok(())
         })
             .map_err(|e| println!("Failed to cleanup: {}", e))
-        /*
-        -        // let world = self.world.clone();
-        -        Interval::new_interval(Duration::from_millis(1_000)).for_each(move |_| {
-            -            /*
-                            -            {
-                            -                let mut world = world.write().unwrap();
-                            -                world.devices.retain(move |_, _v| {
-                            -                    true
-                            -                });
-                            -            }
-                            -            */
-                -
-                -            futures::future::ok(())
-                -        })
-            -            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Interval failed: {}", e)))
-            -    }-    pub fn periodic_cleanup(&self) -> impl Future<Item=(), Error=std::io::Error> {
-                -        // let world = self.world.clone();
-                -        Interval::new_interval(Duration::from_millis(1_000)).for_each(move |_| {
-                    -            /*
-                                    -            {
-                                    -                let mut world = world.write().unwrap();
-                                    -                world.devices.retain(move |_, _v| {
-                                    -                    true
-                                    -                });
-                                    -            }
-                                    -            */
-                        -
-                        -            futures::future::ok(())
-                        -        })
-                    -            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Interval failed: {}", e)))
-                    -    }
-
-        */
     };
 
     let lazy = futures::future::lazy(move || {
