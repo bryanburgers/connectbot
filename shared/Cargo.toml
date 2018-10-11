@@ -1,5 +1,5 @@
 [package]
-name = "comms_shared"
+name = "connectbot-shared"
 version = "0.1.0"
 authors = ["Bryan Burgers <bryan@burgers.io>"]
 

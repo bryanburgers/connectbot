@@ -4,8 +4,8 @@ use tokio::net::TcpStream;
 use tokio_codec;
 use futures::{self, Stream, Sink, Future};
 
-use comms_shared::codec::Codec;
-use comms_shared::protos::control;
+use connectbot_shared::codec::Codec;
+use connectbot_shared::protos::control;
 
 use super::world::{self, SharedWorld};
 

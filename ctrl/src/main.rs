@@ -3,11 +3,11 @@ extern crate tokio;
 extern crate futures;
 extern crate tokio_codec;
 
-extern crate comms_shared;
+extern crate connectbot_shared;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 use futures::Future;
-use comms_shared::client::Client as CommsClient;
+use connectbot_shared::client::Client as CommsClient;
 
 fn main() {
     let matches = App::new("commsctrl")

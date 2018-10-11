@@ -9,9 +9,9 @@ use futures::{
 use chrono::{DateTime, Utc};
 use std::net::SocketAddr;
 
-use comms_shared::codec::Codec;
-use comms_shared::protos::device;
-use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
+use connectbot_shared::codec::Codec;
+use connectbot_shared::protos::device;
+use connectbot_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
 
 use tokio_rustls::TlsStream;
 use tokio_rustls::rustls;

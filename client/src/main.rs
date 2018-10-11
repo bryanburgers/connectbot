@@ -12,7 +12,7 @@ extern crate tokio_io;
 extern crate tokio_threadpool;
 extern crate tokio_timer;
 extern crate tokio_rustls;
-extern crate comms_shared;
+extern crate connectbot_shared;
 extern crate webpki_roots;
 
 mod ssh_connection;
@@ -25,9 +25,9 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use std::net::SocketAddr;
 use std::net::IpAddr;
-use comms_shared::codec::Codec;
-use comms_shared::protos::device;
-use comms_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
+use connectbot_shared::codec::Codec;
+use connectbot_shared::protos::device;
+use connectbot_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
 use std::io::BufReader;
 use tokio_rustls::{

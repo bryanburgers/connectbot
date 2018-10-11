@@ -1,10 +1,10 @@
 [package]
-name = "commsctrl"
+name = "connectbot-ctrl"
 version = "0.1.0"
 authors = ["Bryan Burgers <bryan@burgers.io>"]
 
 [dependencies]
-comms_shared = { version = "0.1.0", path = "../shared" }
+connectbot-shared = { version = "0.1.0", path = "../shared" }
 clap = "^2.32"
 chrono = "^0.4"
 rand = "^0.5"

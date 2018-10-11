@@ -14,7 +14,7 @@ extern crate tokio_codec;
 extern crate tokio_rustls;
 extern crate uuid;
 
-extern crate comms_shared;
+extern crate connectbot_shared;
 
 mod control_server;
 mod device_server;
