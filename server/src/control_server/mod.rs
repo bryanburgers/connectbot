@@ -53,6 +53,25 @@ impl Server {
                         if let world::ConnectionStatus::Connected { ref address } = device.connection_status {
                             client_data.set_address(address.to_string().into());
                         }
+
+                        let mut connection_history = Vec::new();
+                        for connection_history_item in device.connection_history.iter() {
+                            let mut history_item = control::ClientsResponse_ConnectionHistoryItem::new();
+                            match connection_history_item {
+                                world::ConnectionHistoryItem::Closed { connected_at, last_message } => {
+                                    history_item.set_field_type(control::ClientsResponse_ConnectionHistoryType::CLOSED);
+                                    history_item.set_connected_at(connected_at.timestamp() as u64);
+                                    history_item.set_last_message(last_message.timestamp() as u64);
+                                },
+                                world::ConnectionHistoryItem::Open { connected_at, .. } => {
+                                    history_item.set_field_type(control::ClientsResponse_ConnectionHistoryType::OPEN);
+                                    history_item.set_connected_at(connected_at.timestamp() as u64);
+                                },
+                            }
+                            connection_history.push(history_item);
+                        }
+                        client_data.set_connection_history(connection_history.into());
+
                         clients.push(client_data);
                     }
                 }

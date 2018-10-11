@@ -33,7 +33,7 @@ fn main() {
     let future = client.get_clients()
         .map(|clients| {
             println!("Received message!");
-            println!("{:?}", clients);
+            println!("{:#?}", clients);
         })
         .map_err(|e| println!("Error: {}", e));
 

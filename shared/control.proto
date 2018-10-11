@@ -30,6 +30,8 @@ message ClientsResponse {
     repeated Connection connections = 2;
     // The remote address of the client.
     string address = 3;
+    // A history of connections for this client.
+    repeated ConnectionHistoryItem connection_history = 4;
   }
 
   enum State {
@@ -50,6 +52,26 @@ message ClientsResponse {
     uint32 forward_port = 4;
     uint32 remote_port = 5;
     bool gateway_port = 6;
+  }
+
+  enum ConnectionHistoryType {
+    UNKNOWN_CONNECTION_HISTORY_TYPE = 0;
+    // A connection that started/ended in the past. It is a "closed" interval.
+    CLOSED = 1;
+    // An active connection that started in the past and hasn't ended. An "open" interval.
+    OPEN = 2;
+  }
+
+  message ConnectionHistoryItem {
+    ConnectionHistoryType type = 1;
+    // When the initialize method was received.
+    //
+    // The timestamp format is a unix time (seconds since epoch).
+    uint64 connected_at = 2;
+    // When the last message was received. If type == OPEN, this will be 0 and should not be used.
+    //
+    // The timestamp format is a unix time (seconds since epoch).
+    uint64 last_message = 3;
   }
 
   repeated Client clients = 1;

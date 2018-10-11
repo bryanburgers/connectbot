@@ -122,6 +122,10 @@ impl ConnectionHistory {
         ConnectionHistory(Vec::new())
     }
 
+    pub fn iter(&self) -> std::slice::Iter<ConnectionHistoryItem> {
+        self.0.iter()
+    }
+
     pub fn connect(&mut self, connection_id: usize, connected_at: DateTime<Utc>) {
         self.0.push(ConnectionHistoryItem::Open { connection_id, connected_at });
     }
