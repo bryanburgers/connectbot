@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use std::net::SocketAddr;
 
 use comms_shared::codec::Codec;
-use comms_shared::protos::client;
+use comms_shared::protos::device;
 use comms_shared::timed_connection::{TimedConnection, TimedConnectionItem, TimedConnectionOptions};
 
 use tokio_rustls::TlsStream;
@@ -29,11 +29,11 @@ pub struct ClientConnection {
     /// The IP address of the connection
     address: SocketAddr,
     /// The channel on which to send messages back to the client
-    tx: Sender<client::ServerMessage>,
+    tx: Sender<device::ServerMessage>,
     /// Temporary storage for the receiver. Once the connection starts, this will be taken and
     /// replaced with None, so is mostly useless except to temporarily store it before the
     /// connection starts.
-    rx: Option<Receiver<client::ServerMessage>>,
+    rx: Option<Receiver<device::ServerMessage>>,
     /// The channel which other things (especially the ClientConnectionHandle) can use to send
     /// back-channel messages to this client.
     back_channel_sender: Sender<BackchannelMessage>,
@@ -99,7 +99,7 @@ impl ClientConnection {
         }
     }
 
-    fn on_client_message(mut self, mut message: client::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+    fn on_client_message(mut self, mut message: device::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
             println!("↑ {:4}: {:?}", &self.id, message);
         }
@@ -107,8 +107,8 @@ impl ClientConnection {
         self.last_message = Some(Utc::now());
 
         if message.has_ping() {
-            let pong = client::Pong::new();
-            let mut message = client::ServerMessage::new();
+            let pong = device::Pong::new();
+            let mut message = device::ServerMessage::new();
             message.set_pong(pong);
 
             let f = self.tx.clone().send(message)
@@ -169,8 +169,8 @@ impl ClientConnection {
     }
 
     fn on_timeout(self) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
-        let ping = client::Ping::new();
-        let mut response = client::ServerMessage::new();
+        let ping = device::Ping::new();
+        let mut response = device::ServerMessage::new();
         response.set_ping(ping);
 
         let f = self.tx.clone().send(response)
@@ -217,7 +217,7 @@ impl ClientConnection {
               C: rustls::Session + 'static,
     {
         // Process socket here.
-        let codec: Codec<client::ServerMessage, client::ClientMessage> = Codec::new();
+        let codec: Codec<device::ServerMessage, device::ClientMessage> = Codec::new();
         let framed = tokio_codec::Decoder::framed(codec, conn);
 
         let (client_message_sink, client_message_stream) = framed.split();
@@ -272,7 +272,7 @@ impl ClientConnection {
 // A holder type for when we combine backchannel messages and client messages into the same stream.
 enum ClientBackchannelCombinedMessage {
     Backchannel(BackchannelMessage),
-    ClientMessage(TimedConnectionItem<client::ClientMessage>),
+    ClientMessage(TimedConnectionItem<device::ClientMessage>),
 }
 
 #[derive(Debug)]

@@ -22,7 +22,7 @@ fn main() {
 
     protoc_rust::run(protoc_rust::Args {
         out_dir: &dest_path_str[..],
-        input: &["control.proto", "client.proto"],
+        input: &["control.proto", "device.proto"],
         includes: &[],
         customize: Customize {
             carllerche_bytes_for_bytes: Some(true),
@@ -35,11 +35,11 @@ fn main() {
     // a hardcoded path attribute. So create that file. This gets included from src/protos/mod.rs
     let dest_path = Path::new(&out_dir).join("protos/mod.rs");
     let control_path = Path::new(&out_dir).join("protos/control.rs");
-    let client_path = Path::new(&out_dir).join("protos/client.rs");
+    let device_path = Path::new(&out_dir).join("protos/device.rs");
     let mut f = fs::File::create(&dest_path).unwrap();
 
     writeln!(f, "#[path={:?}]", control_path).unwrap();
     writeln!(f, "pub mod control;").unwrap();
-    writeln!(f, "#[path={:?}]", client_path).unwrap();
-    writeln!(f, "pub mod client;").unwrap();
+    writeln!(f, "#[path={:?}]", device_path).unwrap();
+    writeln!(f, "pub mod device;").unwrap();
 }

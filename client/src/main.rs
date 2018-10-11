@@ -26,7 +26,7 @@ use tokio::net::TcpStream;
 use std::net::SocketAddr;
 use std::net::IpAddr;
 use comms_shared::codec::Codec;
-use comms_shared::protos::client;
+use comms_shared::protos::device;
 use comms_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
 use std::io::BufReader;
@@ -229,11 +229,11 @@ fn connect(id: String, connection: Connection, arc_config: Arc<ClientConfig>) {
         })
         .and_then(move |stream| {
             println!("! TLS connection established.");
-            let codec: Codec<client::ClientMessage, client::ServerMessage> = Codec::new();
+            let codec: Codec<device::ClientMessage, device::ServerMessage> = Codec::new();
             let framed = tokio_codec::Decoder::framed(codec, stream);
             let (sink, stream) = framed.split();
 
-            let (tx, rx): (futures::sync::mpsc::Sender<client::ClientMessage>, futures::sync::mpsc::Receiver<client::ClientMessage>) = futures::sync::mpsc::channel(0);
+            let (tx, rx): (futures::sync::mpsc::Sender<device::ClientMessage>, futures::sync::mpsc::Receiver<device::ClientMessage>) = futures::sync::mpsc::channel(0);
 
             let sink = sink.sink_map_err(|_| ());
             let rx = rx.map_err(|_| panic!());
@@ -255,10 +255,10 @@ fn connect(id: String, connection: Connection, arc_config: Arc<ClientConfig>) {
 
             let initialize_future = {
                 // Send the initialize message.
-                let mut initialize = client::Initialize::new();
+                let mut initialize = device::Initialize::new();
                 initialize.set_id(id.into());
                 initialize.set_comms_version("1.0".into());
-                let mut client_message = client::ClientMessage::new();
+                let mut client_message = device::ClientMessage::new();
                 client_message.set_initialize(initialize);
 
                 let f = tx.clone().send(client_message)
@@ -281,8 +281,8 @@ fn connect(id: String, connection: Connection, arc_config: Arc<ClientConfig>) {
                         }
 
                         if message.has_ping() {
-                            let pong = client::Pong::new();
-                            let mut client_message = client::ClientMessage::new();
+                            let pong = device::Pong::new();
+                            let mut client_message = device::ClientMessage::new();
                             client_message.set_pong(pong);
 
                             let f = tx.clone().send(client_message)
@@ -293,8 +293,8 @@ fn connect(id: String, connection: Connection, arc_config: Arc<ClientConfig>) {
                         }
                     },
                     TimedConnectionItem::Timeout => {
-                        let ping = client::Ping::new();
-                        let mut client_message = client::ClientMessage::new();
+                        let ping = device::Ping::new();
+                        let mut client_message = device::ClientMessage::new();
                         client_message.set_ping(ping);
 
                         let f = tx.clone().send(client_message)
