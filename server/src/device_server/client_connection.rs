@@ -128,7 +128,7 @@ impl ClientConnection {
 
             let previous_connection = {
                 let mut world = self.world.write().unwrap();
-                world.connect_device(&device_id, self.get_handle(), &self.address)
+                world.connect_device(&device_id, self.get_handle(), &self.address, Instant::now())
             };
             if let Some(previous_connection) = previous_connection {
                 tokio::spawn(previous_connection.disconnect());

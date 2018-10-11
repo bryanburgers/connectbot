@@ -33,14 +33,15 @@ impl World {
     ///
     /// Returns the previous connection handle, if one existed. (This makes it possible to
     /// disconnect the previous connection handle, if necessary.)
-    pub fn connect_device(&mut self, id: &str, handle: ClientConnectionHandle, address: &SocketAddr) -> Option<ClientConnectionHandle> {
+    pub fn connect_device(&mut self, id: &str, handle: ClientConnectionHandle, address: &SocketAddr, connected_at: Instant) -> Option<ClientConnectionHandle> {
+        let connection_id = handle.get_id();
         let device = self.devices.entry(id.to_string())
             .or_insert_with(|| {
                 Device::new(id)
             });
 
         device.connection_status = ConnectionStatus::Connected { address: address.ip() };
-        device.connection_history.connect(Instant::now());
+        device.connection_history.connect(connection_id, connected_at);
         std::mem::replace(&mut device.active_connection, Some(handle))
     }
 
@@ -62,14 +63,13 @@ impl World {
             // connection status with disconnected.
             if active_connection.get_id() == connection_id {
                 device.connection_status = ConnectionStatus::Disconnected { last_seen: last_message };
-                device.connection_history.disconnect(last_message);
             }
         }
         else {
             // There is no active connection. Mark as disconnected.
             device.connection_status = ConnectionStatus::Disconnected { last_seen: last_message };
-            device.connection_history.disconnect(last_message);
         }
+        device.connection_history.disconnect(connection_id, last_message);
     }
 }
 
@@ -112,33 +112,26 @@ impl ConnectionHistory {
         ConnectionHistory(Vec::new())
     }
 
-    pub fn connect(&mut self, now: Instant) {
-        let len = self.0.len();
-
-        if len > 0 {
-            let push = match &self.0[len - 1] {
-                ConnectionHistoryItem::Open(_) => false,
-                ConnectionHistoryItem::Closed(_, _) => true,
-            };
-            if push {
-                self.0.push(ConnectionHistoryItem::Open(now))
-            }
-        }
-        else {
-            // No items in the list. Add ours.
-            self.0.push(ConnectionHistoryItem::Open(now));
-        }
+    pub fn connect(&mut self, connection_id: usize, connected_at: Instant) {
+        self.0.push(ConnectionHistoryItem::Open { connection_id, connected_at });
     }
 
-    pub fn disconnect(&mut self, now: Instant) {
-        // TODO: make sure an item actually exists
-        let r = self.0.pop().unwrap();
-        self.0.push(match r {
-            // If there was an open interval, close it.
-            ConnectionHistoryItem::Open(start) => ConnectionHistoryItem::Closed(start, now),
-            // If there was a closed interval... well that's curious, but do nothing.
-            a => a,
-        });
+    pub fn disconnect(&mut self, connection_id: usize, last_message: Instant) {
+        for i in 0..self.0.len() {
+            let replace = match &self.0[i] {
+                ConnectionHistoryItem::Open { connection_id: ref conn_id, ref connected_at } if connection_id == *conn_id => {
+                    // Replace the existing open item with a closed item
+                    Some(ConnectionHistoryItem::Closed { connected_at: connected_at.clone(), last_message })
+                },
+                // Don't replace.
+                _ => None,
+            };
+
+            if let Some(replace) = replace {
+                self.0[i] = replace;
+                break;
+            }
+        }
     }
 }
 
@@ -146,9 +139,9 @@ impl ConnectionHistory {
 #[derive(Debug)]
 pub enum ConnectionHistoryItem {
     /// A period of time in the past when the device was connected.
-    Closed(Instant, Instant),
+    Closed { connected_at: Instant, last_message: Instant },
     /// The device is currently connected, and that connection started at the given time.
-    Open(Instant),
+    Open { connection_id: usize, connected_at: Instant },
 }
 
 /// Information about a single ssh forwarding
