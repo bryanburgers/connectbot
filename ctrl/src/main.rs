@@ -10,7 +10,7 @@ use futures::Future;
 use connectbot_shared::client::Client as CommsClient;
 
 fn main() {
-    let matches = App::new("commsctrl")
+    let matches = App::new("connectbot-ctrl")
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
         .about("Communications")
@@ -20,7 +20,7 @@ fn main() {
              .long("address")
              .help("The address to use to communicate with the lights daemon")
              .takes_value(true)
-             .default_value("localhost:12345"))
+             .default_value("[::1]:12345"))
         .subcommand(SubCommand::with_name("connect"))
         .subcommand(SubCommand::with_name("disconnect"))
         .subcommand(SubCommand::with_name("query"))

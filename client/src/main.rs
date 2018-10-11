@@ -22,7 +22,6 @@ use clap::{Arg, App};
 use futures::{Future, Stream, Sink};
 use std::time::Duration;
 
-use tokio::net::TcpStream;
 use std::net::SocketAddr;
 use std::net::IpAddr;
 use connectbot_shared::codec::Codec;
@@ -74,7 +73,7 @@ impl<'a> tokio_dns::ToEndpoint<'a> for &'a Connection {
 }
 
 fn main() {
-    let matches = App::new("comms-client")
+    let matches = App::new("connectbot-client")
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
         .about("The client")
@@ -162,8 +161,6 @@ fn main() {
         config.set_single_client_cert(load_certs(cert), load_keys(matches.value_of("key").unwrap()).remove(0));
     }
     let arc_config = Arc::new(config);
-    // TODO: If --ca is not set, this should be the hostname of addr
-    let domain = matches.value_of("domain").unwrap_or("comms-server").to_string();
 
     tokio::run(futures::future::lazy(move || {
         connect(id, connection, arc_config);
