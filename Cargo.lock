@@ -539,6 +539,7 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "bytes 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "chrono 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "comms_shared 0.1.0",
  "futures 0.1.24 (registry+https://github.com/rust-lang/crates.io-index)",

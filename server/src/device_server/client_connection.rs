@@ -6,7 +6,7 @@ use futures::{
     sync::mpsc::{channel, Sender, Receiver},
 };
 
-use std::time::Instant;
+use chrono::{DateTime, Utc};
 use std::net::SocketAddr;
 
 use comms_shared::codec::Codec;
@@ -44,7 +44,7 @@ pub struct ClientConnection {
     /// The device ID for this client
     device_id: Option<String>,
     /// The last time we received any message from this client
-    last_message: Option<Instant>,
+    last_message: Option<DateTime<Utc>>,
     /// A handle that will cancel the stream
     cancel_handle: Option<CancelHandle>,
 }
@@ -104,7 +104,7 @@ impl ClientConnection {
             println!("↑ {:4}: {:?}", &self.id, message);
         }
 
-        self.last_message = Some(Instant::now());
+        self.last_message = Some(Utc::now());
 
         if message.has_ping() {
             let pong = client::Pong::new();
@@ -128,7 +128,7 @@ impl ClientConnection {
 
             let previous_connection = {
                 let mut world = self.world.write().unwrap();
-                world.connect_device(&device_id, self.get_handle(), &self.address, Instant::now())
+                world.connect_device(&device_id, self.get_handle(), &self.address, Utc::now())
             };
             if let Some(previous_connection) = previous_connection {
                 tokio::spawn(previous_connection.disconnect());
