@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::net::{IpAddr, SocketAddr};
 
-use super::server::client_connection::ClientConnectionHandle;
+use super::device_server::client_connection::ClientConnectionHandle;
 
 use std;
 

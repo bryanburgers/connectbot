@@ -16,7 +16,8 @@ extern crate uuid;
 
 extern crate comms_shared;
 
-mod server;
+mod control_server;
+mod device_server;
 mod world;
 
 use clap::{Arg, App};
@@ -82,11 +83,11 @@ fn main() {
 
 
     let world = world::World::shared();
-    let server = server::Server::new(world.clone());
-    let server_arc = Arc::new(server);
+    let control_server = control_server::Server::new(world.clone());
+    let device_server = device_server::Server::new(world.clone());
+    let device_server = Arc::new(device_server);
 
-
-    let client_future = {
+    let device_server_future = {
         let addr = matches.value_of("address").unwrap();
         let socket_addr = addr.parse().unwrap();
         let cert_file = matches.value_of("cert").unwrap();
@@ -108,7 +109,7 @@ fn main() {
 
         let listener = TcpListener::bind(&socket_addr).unwrap();
         println!("Client channel listening on {}", &socket_addr);
-        let server = server_arc.clone();
+        let server = device_server.clone();
         let future = listener.incoming().for_each(move |connection| {
             let addr = connection.peer_addr().unwrap();
             let server = server.clone();
@@ -137,12 +138,12 @@ fn main() {
         future
     };
 
-    let control_future = {
+    let control_server_future = {
         let addr = matches.value_of("control-address").unwrap();
         let socket_addr = addr.parse().unwrap();
         let listener = TcpListener::bind(&socket_addr).unwrap();
         println!("Control channel listening on {}", &socket_addr);
-        let server = server_arc.clone();
+        let server = control_server;
         let future = listener.incoming().for_each(move |connection| {
             let future = server.handle_control_connection(connection)
                 .map_err(|e| println!("Warning: {}", e));
@@ -155,18 +156,9 @@ fn main() {
         future
     };
 
-    let cleanup_future = {
-        let server = server_arc.clone();
-
-        server.periodic_cleanup()
-            .map_err(|e| println!("Failed to cleanup: {}", e))
-    };
-
-
     let lazy = futures::future::lazy(move || {
-        tokio::spawn(client_future);
-        tokio::spawn(control_future);
-        tokio::spawn(cleanup_future);
+        tokio::spawn(device_server_future);
+        tokio::spawn(control_server_future);
 
         Ok(())
     });

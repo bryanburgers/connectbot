@@ -1,26 +1,13 @@
 use std;
 use tokio;
 use tokio::net::TcpStream;
-use tokio_timer::Interval;
 use tokio_codec;
 use futures::{self, Stream, Sink, Future};
-
-use std::time::Duration;
-use std::net::SocketAddr;
 
 use comms_shared::codec::Codec;
 use comms_shared::protos::control;
 
-use tokio_rustls::TlsStream;
-use tokio_rustls::rustls;
-use uuid::Uuid;
-
 use super::world::{self, SharedWorld};
-
-pub mod client_connection;
-mod stream_helpers;
-
-use self::client_connection::ClientConnection;
 
 pub struct Server {
     world: SharedWorld,
@@ -31,36 +18,6 @@ impl Server {
         Server {
             world: world,
         }
-    }
-
-    pub fn periodic_cleanup(&self) -> impl Future<Item=(), Error=std::io::Error> {
-        // let world = self.world.clone();
-        Interval::new_interval(Duration::from_millis(1_000)).for_each(move |_| {
-            /*
-            {
-                let mut world = world.write().unwrap();
-                world.devices.retain(move |_, _v| {
-                    true
-                });
-            }
-            */
-
-            futures::future::ok(())
-        })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Interval failed: {}", e)))
-    }
-
-    pub fn handle_client_connection<S, C>(&self, addr: SocketAddr, stream: TlsStream<S, C>) -> impl Future<Item=(), Error=std::io::Error>
-        where S: tokio::io::AsyncWrite + tokio::io::AsyncRead + Send + 'static,
-              C: rustls::Session + 'static,
-    {
-
-        let uuid = Uuid::new_v4();
-        let uuid = format!("{}", uuid);
-        println!("! {}: connected from {}", uuid, &addr.ip());
-
-        let connection = ClientConnection::new(uuid.clone(), addr, self.world.clone());
-        connection.handle_connection(stream)
     }
 
     pub fn handle_control_connection(&self, conn: TcpStream) -> impl Future<Item=(), Error=std::io::Error> {
