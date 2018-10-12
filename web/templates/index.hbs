@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+<head>
+    <title>Connectbot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Roboto+Mono" rel="stylesheet">
+    <style>
+        html, body, * {
+            box-sizing: border-box;
+            font-family: 'Open Sans', sans-serif;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            padding: 1em;
+        }
+
+        .device {
+        }
+        .device + .device {
+            margin-top: 1em;
+        }
+        .device header {
+            margin-bottom: 0.2em;
+        }
+        .device h2 {
+            color: #333;
+            display: inline;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 0;
+        }
+        .device h3 {
+            /* display: inline; */
+            display: none;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.8em;
+            color: #999;
+            font-weight: normal;
+            margin: 0;
+        }
+        .device .address {
+            font-family: 'Roboto Mono', monospace;
+            color: #666;
+            display: none;
+        }
+        .device .address[data-visible="visible"] {
+            display: inline;
+        }
+
+        .device .history {
+            background: #ccc;
+            background: repeating-linear-gradient(235deg, #eee, #eee 10px, #ddd 10px, #ddd 20px, #eee 20px);
+            background: linear-gradient(180deg, rgba(210, 210, 210, 0.3), rgba(210, 210, 210, 0) 50%, rgba(210, 210, 210, 0.8) 100%),
+                        repeating-linear-gradient(235deg, #eee, #eee 10px, #ddd 10px, #ddd 20px, #eee 20px);
+            border-radius: 2px;
+            width: 100%;
+            height: 1em;
+            position: relative;
+            overflow: hidden;
+        }
+        .device .history .history-item {
+            border-radius: 2px;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: #17c017;
+            background: linear-gradient(180deg, #17c017, #19d119 50%, #109c10 100%);
+            border: 1px solid #11a211;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div id="devices">
+        </div>
+    </main>
+
+    <template id="device">
+        <article data-id class="device">
+            <header>
+                <h2 item-name></h2>
+                <h3 item-id class="id"></h3>
+                <h3 item-address class="address" data-visible></h3>
+            </header>
+            <div class="main">
+                <div item-history class="history"></div>
+            </div>
+        </article>
+    </template>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.22.2/moment.min.js"></script>
+    <script>
+        async function build() {
+            const response = await fetch('/devices')
+            const json = await response.json();
+
+            const template = document.getElementById('device')
+            const devices = document.getElementById('devices')
+
+            const fragment = document.createDocumentFragment()
+
+            json.devices.sort((a, b) => {
+                if (a.name < b.name) {
+                    return -1
+                }
+                if (b.name < a.name) {
+                    return 1
+                }
+                return 0
+            })
+
+            for (let device of json.devices) {
+                const node = document.importNode(template.content, true)
+                const li = node.querySelector('[data-id]')
+                li.setAttribute('data-id', device.id)
+
+                let nameEl = li.querySelector('[item-name]')
+                nameEl.innerText = device.name
+
+                let idEl = li.querySelector('[item-id]')
+                idEl.innerText = device.id
+
+                let addressEl = li.querySelector('[item-address]')
+                if (device.address) {
+                    addressEl.innerText = device.address
+                    addressEl.setAttribute('data-visible', 'visible')
+                }
+
+                const historyEl = li.querySelector('[item-history]')
+                const now = moment.utc()
+                const start = now.clone().subtract(2, 'days').unix()
+                const end = now.unix()
+                const duration = end - start
+                for (let history of device.connection_history) {
+                    const el = document.createElement('div')
+                    el.setAttribute('class', 'history-item')
+                    const connectedAt = moment.utc(history.connected_at, moment.ISO_8601)
+                    const barStart = (Math.max(connectedAt.unix(), start) - start)/duration
+
+                    el.style.left = (100 * barStart) + '%'
+
+                    if (history.last_message) {
+                        const lastMessage = moment.utc(history.last_message, moment.ISO_8601)
+                        const barEnd = (Math.max(lastMessage.unix(), start) - start)/duration
+                        el.style.right = ((1 - barEnd) * 100) + '%'
+                    }
+                    else {
+                        el.style.right = '0'
+                    }
+
+                    historyEl.appendChild(el)
+                }
+
+                fragment.appendChild(li)
+            }
+
+            while (devices.firstChild) {
+                devices.removeChild(devices.firstChild)
+            }
+            devices.appendChild(fragment)
+        }
+
+        build().catch(err => console.log(err))
+
+        setInterval(async () => {
+            try {
+                await build()
+            }
+            catch (err) {
+                console.log(err)
+            }
+        }, 2000)
+    </script>
+</body>
+</html>
