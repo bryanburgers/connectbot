@@ -121,12 +121,15 @@ impl_web! {
     impl ConnectBotWeb {
         #[get("/")]
         #[content_type("html")]
-        #[web(template = "index")]
-        fn index(&self) -> Result<IndexResponse, ()> {
+        // #[web(template = "index")]
+        fn index(&self) -> Result<&'static str, ()> {
+            Ok(include_str!("../templates/index.hbs"))
+            /*
             let resp = IndexResponse {
                 test: "test",
             };
             Ok(resp)
+            */
         }
 
         #[get("/devices")]
@@ -147,7 +150,7 @@ pub fn main() {
         .arg(Arg::with_name("address")
              .short("a")
              .long("address")
-             .help("The address to use to communicate with the lights daemon")
+             .help("The address to use to communicate with the connectbot server")
              .takes_value(true)
              .default_value("[::1]:12345"))
         .arg(Arg::with_name("listen")
