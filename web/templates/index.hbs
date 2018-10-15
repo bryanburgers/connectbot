@@ -71,6 +71,27 @@
             border: 1px solid #11a211;
             display: block;
         }
+
+        .durations {
+            font-size: 0.6em;
+            text-align: right;
+            margin-top: 3em;
+        }
+        .durations button {
+            border: none;
+            background: none;
+            display: inline;
+            cursor: pointer;
+            color: #4488ff;
+            font-size: inherit;
+            font-family: inherit;
+            margin: 0;
+            padding: 0;
+        }
+        .durations button[data-selected=selected] {
+            cursor: default;
+            color: inherit;
+        }
     </style>
 </head>
 <body>
@@ -78,6 +99,12 @@
         <div id="devices">
         </div>
     </main>
+
+    <footer>
+        <div id="durations" class="durations">
+            <button data-hours=1>1 hr</button> &bull; <button data-hours=2 data-selected=selected>2 hrs</button> &bull; <button data-hours=8>8 hrs</button> &bull; <button data-hours=24>1 day</button> &bull; <button data-hours=48>2 days</button>
+        </div>
+    </footer>
 
     <template id="device">
         <article data-id class="device">
@@ -94,14 +121,43 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.22.2/moment.min.js"></script>
     <script>
+        const durations = document.getElementById('durations')
+        const hours = parseInt(durations.querySelector('[data-selected=selected]').getAttribute('data-hours'), 10) || 2
+        window.selectedHours = hours
+
+        durations.addEventListener('click', e => {
+            if (!e.target.hasAttribute('data-hours')) {
+                return
+            }
+
+            const hours = parseInt(e.target.getAttribute('data-hours'), 10)
+            window.selectedHours = hours
+
+            for (let item of durations.querySelectorAll('[data-hours]')) {
+                if (item !== e.target) {
+                    item.setAttribute('data-selected', '')
+                }
+            }
+            e.target.setAttribute('data-selected', 'selected')
+
+            render()
+        }, true);
+
         async function build() {
             const response = await fetch('/devices')
             const json = await response.json();
+            window.deviceData = json
 
+            render()
+        }
+
+        function render() {
             const template = document.getElementById('device')
             const devices = document.getElementById('devices')
 
             const fragment = document.createDocumentFragment()
+
+            const json = window.deviceData;
 
             json.devices.sort((a, b) => {
                 if (a.name < b.name) {
@@ -132,10 +188,13 @@
 
                 const historyEl = li.querySelector('[item-history]')
                 const now = moment.utc()
-                const start = now.clone().subtract(2, 'days').unix()
+                const start = now.clone().subtract(window.selectedHours, 'hours').unix()
                 const end = now.unix()
                 const duration = end - start
                 for (let history of device.connection_history) {
+                    if (history.last_message && history.last_message < start) {
+                        continue
+                    }
                     const el = document.createElement('div')
                     el.setAttribute('class', 'history-item')
                     const connectedAt = moment.utc(history.connected_at, moment.ISO_8601)
