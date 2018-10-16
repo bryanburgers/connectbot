@@ -51,7 +51,7 @@ impl World {
             });
 
         device.connection_status = ConnectionStatus::Connected { address: address.ip() };
-        device.connection_history.connect(connection_id, connected_at);
+        device.connection_history.connect(connection_id, connected_at, address.ip() );
         std::mem::replace(&mut device.active_connection, Some(handle))
     }
 
@@ -126,16 +126,16 @@ impl ConnectionHistory {
         self.0.iter()
     }
 
-    pub fn connect(&mut self, connection_id: usize, connected_at: DateTime<Utc>) {
-        self.0.push(ConnectionHistoryItem::Open { connection_id, connected_at });
+    pub fn connect(&mut self, connection_id: usize, connected_at: DateTime<Utc>, address: IpAddr) {
+        self.0.push(ConnectionHistoryItem::Open { connection_id, connected_at, address });
     }
 
     pub fn disconnect(&mut self, connection_id: usize, last_message: DateTime<Utc>) {
         for i in 0..self.0.len() {
             let replace = match &self.0[i] {
-                ConnectionHistoryItem::Open { connection_id: ref conn_id, ref connected_at } if connection_id == *conn_id => {
+                ConnectionHistoryItem::Open { connection_id: ref conn_id, ref connected_at, ref address } if connection_id == *conn_id => {
                     // Replace the existing open item with a closed item
-                    Some(ConnectionHistoryItem::Closed { connected_at: connected_at.clone(), last_message })
+                    Some(ConnectionHistoryItem::Closed { connected_at: connected_at.clone(), last_message, address: address.clone() })
                 },
                 // Don't replace.
                 _ => None,
@@ -162,9 +162,9 @@ impl ConnectionHistory {
 #[derive(Debug)]
 pub enum ConnectionHistoryItem {
     /// A period of time in the past when the device was connected.
-    Closed { connected_at: DateTime<Utc>, last_message: DateTime<Utc> },
+    Closed { connected_at: DateTime<Utc>, last_message: DateTime<Utc>, address: IpAddr },
     /// The device is currently connected, and that connection started at the given time.
-    Open { connection_id: usize, connected_at: DateTime<Utc> },
+    Open { connection_id: usize, connected_at: DateTime<Utc>, address: IpAddr },
 }
 
 /// Information about a single ssh forwarding

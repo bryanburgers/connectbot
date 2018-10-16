@@ -41,7 +41,6 @@ impl Server {
         let world = self.world.clone();
 
         stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
-            println!("{:?}", message);
             if message.has_clients_request() {
                 let mut clients = Vec::new();
                 {
@@ -58,14 +57,16 @@ impl Server {
                         for connection_history_item in device.connection_history.iter() {
                             let mut history_item = control::ClientsResponse_ConnectionHistoryItem::new();
                             match connection_history_item {
-                                world::ConnectionHistoryItem::Closed { connected_at, last_message } => {
+                                world::ConnectionHistoryItem::Closed { connected_at, last_message, address } => {
                                     history_item.set_field_type(control::ClientsResponse_ConnectionHistoryType::CLOSED);
                                     history_item.set_connected_at(connected_at.timestamp() as u64);
                                     history_item.set_last_message(last_message.timestamp() as u64);
+                                    history_item.set_address(address.to_string().into());
                                 },
-                                world::ConnectionHistoryItem::Open { connected_at, .. } => {
+                                world::ConnectionHistoryItem::Open { connected_at, address, .. } => {
                                     history_item.set_field_type(control::ClientsResponse_ConnectionHistoryType::OPEN);
                                     history_item.set_connected_at(connected_at.timestamp() as u64);
+                                    history_item.set_address(address.to_string().into());
                                 },
                             }
                             connection_history.push(history_item);

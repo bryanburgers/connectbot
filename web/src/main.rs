@@ -89,6 +89,7 @@ impl From<control::ClientsResponse_Client> for Device {
 struct DeviceHistoryItem {
     connected_at: String,
     last_message: Option<String>,
+    address: String,
 }
 
 impl From<control::ClientsResponse_ConnectionHistoryItem> for DeviceHistoryItem {
@@ -96,6 +97,7 @@ impl From<control::ClientsResponse_ConnectionHistoryItem> for DeviceHistoryItem 
         let history_type = client.get_field_type();
         let connected_at = Utc.timestamp(client.get_connected_at() as i64, 0);
         let last_message = Utc.timestamp(client.get_last_message() as i64, 0);
+        let address = client.get_address().to_string();
 
         match history_type {
             control::ClientsResponse_ConnectionHistoryType::UNKNOWN_CONNECTION_HISTORY_TYPE => {
@@ -105,12 +107,14 @@ impl From<control::ClientsResponse_ConnectionHistoryItem> for DeviceHistoryItem 
                 DeviceHistoryItem {
                     connected_at: connected_at.to_rfc3339(),
                     last_message: Some(last_message.to_rfc3339()),
+                    address,
                 }
             },
             control::ClientsResponse_ConnectionHistoryType::OPEN => {
                 DeviceHistoryItem {
                     connected_at: connected_at.to_rfc3339(),
                     last_message: None,
+                    address,
                 }
             },
         }

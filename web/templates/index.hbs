@@ -49,6 +49,9 @@
         .device .address[data-visible="visible"] {
             display: inline;
         }
+        .device .address[data-state="inactive"] {
+            color: #bbb;
+        }
 
         .device .history {
             background: #ccc;
@@ -184,6 +187,12 @@
                 if (device.address) {
                     addressEl.innerText = device.address
                     addressEl.setAttribute('data-visible', 'visible')
+                    addressEl.setAttribute('data-state', 'active')
+                }
+                else if (device.connection_history.length && device.connection_history[device.connection_history.length - 1].address) {
+                    addressEl.innerText = device.connection_history[device.connection_history.length - 1].address
+                    addressEl.setAttribute('data-visible', 'visible')
+                    addressEl.setAttribute('data-state', 'inactive')
                 }
 
                 const historyEl = li.querySelector('[item-history]')
