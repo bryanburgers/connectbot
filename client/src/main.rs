@@ -15,30 +15,24 @@ extern crate tokio_rustls;
 extern crate connectbot_shared;
 extern crate webpki_roots;
 
-mod ssh_connection;
+mod server_connection;
+// mod ssh_connection;
 
 use clap::{Arg, App};
 
 use futures::{Future, Stream, Sink};
-use std::time::Duration;
 
-use std::net::SocketAddr;
 use std::net::IpAddr;
-use connectbot_shared::codec::Codec;
 use connectbot_shared::protos::device;
-use connectbot_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
 use std::io::BufReader;
 use tokio_rustls::{
-    TlsConnector,
     rustls::{
         Certificate, ClientConfig, PrivateKey,
         internal::pemfile::{ certs, rsa_private_keys },
     },
-    webpki
 };
 use std::fs::{self, File};
-use std::sync::Arc;
 
 fn load_certs(path: &str) -> Vec<Certificate> {
     certs(&mut BufReader::new(File::open(path).unwrap())).unwrap()
@@ -46,30 +40,6 @@ fn load_certs(path: &str) -> Vec<Certificate> {
 
 fn load_keys(path: &str) -> Vec<PrivateKey> {
     rsa_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
-}
-
-#[derive(Clone)]
-enum Connection {
-    Address { address: String, port: u16 },
-    AddressWithResolve { address: String, resolve: IpAddr, port: u16 },
-}
-
-impl Connection {
-    fn address(&self) -> &str {
-        match self {
-            Connection::Address { address, .. } => &address,
-            Connection::AddressWithResolve { address, .. } => &address,
-        }
-    }
-}
-
-impl<'a> tokio_dns::ToEndpoint<'a> for &'a Connection {
-    fn to_endpoint(self) -> std::io::Result<tokio_dns::Endpoint<'a>> {
-        match self {
-            Connection::Address { address, port } => Ok(tokio_dns::Endpoint::Host(&address, *port)),
-            Connection::AddressWithResolve { resolve, port, .. } => Ok(tokio_dns::Endpoint::SocketAddr(SocketAddr::new(resolve.clone(), *port))),
-        }
-    }
 }
 
 fn main() {
@@ -135,38 +105,33 @@ fn main() {
     let connection = if let Some(resolve) = matches.value_of("resolve") {
         let resolve = resolve.parse().unwrap();
 
-        Connection::AddressWithResolve {
+        server_connection::ConnectionDetails::AddressWithResolve {
             address: address,
             resolve: resolve,
             port: port,
         }
     }
     else {
-        Connection::Address {
+        server_connection::ConnectionDetails::Address {
             address: address,
             port: port,
         }
     };
 
-    let mut config = ClientConfig::new();
+    let mut tls_config = ClientConfig::new();
     if let Some(cafile) = matches.value_of("cafile") {
         let mut pem = BufReader::new(fs::File::open(cafile).unwrap());
-        config.root_store.add_pem_file(&mut pem).unwrap();
+        tls_config.root_store.add_pem_file(&mut pem).unwrap();
     }
     else {
-        config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+        tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
     }
 
     if let Some(cert) = matches.value_of("cert") {
-        config.set_single_client_cert(load_certs(cert), load_keys(matches.value_of("key").unwrap()).remove(0));
+        tls_config.set_single_client_cert(load_certs(cert), load_keys(matches.value_of("key").unwrap()).remove(0));
     }
-    let arc_config = Arc::new(config);
 
-    tokio::run(futures::future::lazy(move || {
-        connect(id, connection, arc_config);
-
-        futures::future::ok(())
-    }))
+    tokio::run(connect(id, connection, tls_config));
 
     /*
     let lazy = futures::lazy(|| {
@@ -209,119 +174,124 @@ fn main() {
     */
 }
 
-fn connect(id: String, connection: Connection, arc_config: Arc<ClientConfig>) {
-    let connect_id_clone = id.clone();
-    let connect_connection_clone = connection.clone();
-    let connect_arc_config = arc_config.clone();
+struct Client {
+    id: String,
+    successful_connections: usize,
+    sender: futures::sync::mpsc::Sender<device::ClientMessage>,
+}
 
-    let connect_future = tokio_dns::TcpStream::connect(&connection);
+impl Client {
+    fn new(id: String, sender: futures::sync::mpsc::Sender<device::ClientMessage>) -> Client {
+        Client {
+            id,
+            successful_connections: 0,
+            sender,
+        }
+    }
 
-    let f2 = connect_future
-        .and_then(move |stream| {
-            let domain = connection.address();
-            println!("! TCP connection established.");
-            let domain = webpki::DNSNameRef::try_from_ascii_str(&domain).unwrap();
-            let connector: TlsConnector = arc_config.clone().into();
-            connector.connect(domain, stream)
-        })
-        .and_then(move |stream| {
-            println!("! TLS connection established.");
-            let codec: Codec<device::ClientMessage, device::ServerMessage> = Codec::new();
-            let framed = tokio_codec::Decoder::framed(codec, stream);
-            let (sink, stream) = framed.split();
+    fn on_connected(mut self) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+        self.successful_connections += 1;
 
-            let (tx, rx): (futures::sync::mpsc::Sender<device::ClientMessage>, futures::sync::mpsc::Receiver<device::ClientMessage>) = futures::sync::mpsc::channel(0);
+        // Send the initialize message.
+        let mut initialize = device::Initialize::new();
+        initialize.set_id(self.id.clone().into());
+        initialize.set_comms_version("1.0".into());
+        let mut client_message = device::ClientMessage::new();
+        client_message.set_initialize(initialize);
 
-            let sink = sink.sink_map_err(|_| ());
-            let rx = rx.map_err(|_| panic!());
+        let f = self.sender.clone().send(client_message)
+            .map(|_| self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
 
-            tokio::spawn(rx.map(|message| {
-                if !message.has_ping() && !message.has_pong() {
-                    println!("↑ {:?}", message);
-                }
-                message
-            })
-                .forward(sink)
-                .then(|result| {
-                    if let Err(e) = result {
-                        println!("Something happened: {:?}", e);
-                        // panic!("failed to write to socket: {:?}", e)
-                    }
-                    Ok(())
-                }));
+        return Box::new(f);
+    }
 
-            let initialize_future = {
-                // Send the initialize message.
-                let mut initialize = device::Initialize::new();
-                initialize.set_id(id.into());
-                initialize.set_comms_version("1.0".into());
-                let mut client_message = device::ClientMessage::new();
-                client_message.set_initialize(initialize);
+    fn on_client_message(self, message: device::ServerMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+        if !message.has_ping() && !message.has_pong() {
+            println!("↑ {:4}: {:?}", &self.id, message);
+        }
 
-                let f = tx.clone().send(client_message)
-                    .map(|_| ())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send initialize: {}", e)));
+        if message.has_ping() {
+            let pong = device::Pong::new();
+            let mut message = device::ClientMessage::new();
+            message.set_pong(pong);
 
-                f
-            };
+            let f = self.sender.clone().send(message)
+                .map(|_| self)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
 
-            let stream = TimedConnection::new(stream, TimedConnectionOptions {
-                warning_level: Duration::from_millis(60_000),
-                disconnect_level: Duration::from_millis(120_000),
-            });
+            return Box::new(f);
+        }
 
-            let stream_future = stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
-                match message {
-                    TimedConnectionItem::Item(message) => {
-                        if !message.has_ping() && !message.has_pong() {
-                            println!("↓ {:?}", message);
-                        }
+        Box::new(futures::future::ok(self))
+    }
 
-                        if message.has_ping() {
-                            let pong = device::Pong::new();
-                            let mut client_message = device::ClientMessage::new();
-                            client_message.set_pong(pong);
+    fn on_timeout_warning(self) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+        let ping = device::Ping::new();
+        let mut message = device::ClientMessage::new();
+        message.set_ping(ping);
 
-                            let f = tx.clone().send(client_message)
-                                .map(|_| ())
-                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send pong: {}", e)));
+        let f = self.sender.clone().send(message)
+            .map(|_| self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
 
-                            return Box::new(f);
-                        }
-                    },
-                    TimedConnectionItem::Timeout => {
-                        let ping = device::Ping::new();
-                        let mut client_message = device::ClientMessage::new();
-                        client_message.set_ping(ping);
+        return Box::new(f);
+    }
+}
 
-                        let f = tx.clone().send(client_message)
-                            .map(|_| ())
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
+fn connect(id: String, connection_details: server_connection::ConnectionDetails, tls_config: ClientConfig) -> impl Future<Item=(), Error=()> {
+    let server_connection = server_connection::ServerConnection::new(connection_details, tls_config);
 
-                        return Box::new(f);
-                    },
-                }
-                Box::new(futures::future::ok(()))
-            });
+    let (sink, stream) = server_connection.split();
 
-            initialize_future.join(stream_future)
-                .map(|_| ())
-        })
-        .map(|_| println!("! Disconnected."))
-        .map_err(|e| println!("! Connectioned failed: {:?}", e))
-        .then(move |_| {
-            use std::time::{Instant, Duration};
+    let (tx, rx): (futures::sync::mpsc::Sender<device::ClientMessage>, futures::sync::mpsc::Receiver<device::ClientMessage>) = futures::sync::mpsc::channel(0);
 
-            tokio_timer::Delay::new(Instant::now() + Duration::from_millis(15000))
-                .and_then(move |_| {
-                    connect(connect_id_clone, connect_connection_clone, connect_arc_config);
+    let sink = sink.sink_map_err(|_| ());
+    let rx = rx.map_err(|_| panic!());
 
-                    Ok(())
-                })
-                .map(|_| ())
-                .map_err(|_| ())
+    let client = Client::new(id, tx);
+
+    let sender_future = rx.inspect(|message| {
+        if !message.has_ping() && !message.has_pong() {
+            println!("↑ {:?}", message);
+        }
+    })
+        .forward(sink)
+        .then(|result| {
+            if let Err(e) = result {
+                println!("Something happened: {:?}", e);
+                // panic!("failed to write to socket: {:?}", e)
+            }
+            Ok(())
         });
 
-    println!("! Opening connection.");
-    tokio::spawn(f2);
+    let stream_future = stream.fold(client, move |client, message| {
+        match message {
+            server_connection::ServerConnectionEvent::Connecting => {
+                println!("! Connecting...");
+            },
+            server_connection::ServerConnectionEvent::TcpConnected => {
+                println!("! TCP connected");
+            },
+            server_connection::ServerConnectionEvent::TlsConnected => {
+                println!("! TLS connected");
+
+                return client.on_connected();
+            },
+            server_connection::ServerConnectionEvent::ConnectionFailed(i) => {
+                println!("! Connection failed: {}. Trying again in {:?}.", i.err, i.duration);
+            },
+            server_connection::ServerConnectionEvent::Item(message) => {
+                return client.on_client_message(message);
+            },
+            server_connection::ServerConnectionEvent::TimeoutWarning => {
+                return client.on_timeout_warning();
+            },
+        }
+        Box::new(futures::future::ok(client))
+    });
+
+    stream_future.join(sender_future)
+        .map(|_| ())
+        .map_err(|_| ())
 }
