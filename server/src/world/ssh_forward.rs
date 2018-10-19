@@ -1,7 +1,7 @@
 use uuid;
 
 /// Information about a single ssh forwarding
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SshForward {
     pub id: String,
     pub client_state: SshForwardClientState,
@@ -12,7 +12,7 @@ pub struct SshForward {
     pub gateway_port: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SshForwardServerState {
     // TODO: Active until...
     /// The server is actively attempting to keep the device connected
@@ -23,7 +23,7 @@ pub enum SshForwardServerState {
 }
 
 /// The state of the connection, as the client has reported it to us.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SshForwardClientState {
     /// The client has not reported any state to us.
     Requested,
@@ -47,6 +47,16 @@ pub struct SshForwards(Vec<SshForward>);
 impl SshForwards {
     pub fn new() -> SshForwards {
         SshForwards(Vec::new())
+    }
+
+    pub fn find(&self, id: &str) -> Option<&SshForward> {
+        for item in self.0.iter() {
+            if item.id == id {
+                return Some(item)
+            }
+        }
+
+        None
     }
 
     pub fn iter(&self) -> ::std::slice::Iter<SshForward> {

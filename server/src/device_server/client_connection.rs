@@ -16,7 +16,7 @@ use connectbot_shared::timed_connection::{TimedConnection, TimedConnectionItem, 
 use tokio_rustls::TlsStream;
 use tokio_rustls::rustls;
 
-use super::world::SharedWorld;
+use super::world::{self, SharedWorld};
 
 use super::stream_helpers::{CancelableStream, CancelHandle, PrimarySecondaryStream};
 
@@ -66,6 +66,20 @@ impl ClientConnectionHandle {
             .map_err(|_| ())
     }
 
+    /// Notify the client that an SSH connection should be handled
+    pub fn connect_ssh(&self, id: &str) -> impl Future<Item=(), Error=()> {
+        self.sender.clone().send(BackchannelMessage::SshConnect(id.to_string()))
+            .map(|_| ())
+            .map_err(|_| ())
+    }
+
+    /// Notify the client that an SSH disconnection should be handled
+    pub fn disconnect_ssh(&self, id: &str) -> impl Future<Item=(), Error=()> {
+        self.sender.clone().send(BackchannelMessage::SshDisconnect(id.to_string()))
+            .map(|_| ())
+            .map_err(|_| ())
+    }
+
     pub fn get_id(&self) -> usize {
         self.id
     }
@@ -97,6 +111,32 @@ impl ClientConnection {
             id: self.id.clone(),
             sender: self.back_channel_sender.clone(),
         }
+    }
+
+    fn sender_send_connect_ssh(tx: Sender<device::ServerMessage>, ssh_forward: world::SshForward) -> impl Future<Item=(), Error=std::io::Error> + Send {
+        let mut enable = device::SshConnection_Enable::new();
+
+        // TODO: Don't hardcode these.
+        enable.set_ssh_host("test".into());
+        enable.set_ssh_port(22);
+        enable.set_ssh_username("test".into());
+        // enable.set_ssh_key();
+
+        enable.set_forward_host(ssh_forward.forward_host.clone().into());
+        enable.set_forward_port(ssh_forward.forward_port as u32);
+        enable.set_remote_port(ssh_forward.remote_port as u32);
+        enable.set_gateway_port(ssh_forward.gateway_port);
+
+        let mut ssh_connection = device::SshConnection::new();
+        ssh_connection.set_id(ssh_forward.id.into());
+        ssh_connection.set_enable(enable);
+
+        let mut message = device::ServerMessage::new();
+        message.set_ssh_connection(ssh_connection);
+
+        tx.clone().send(message)
+            .map(|_| ())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ssh connect: {}", e)))
     }
 
     fn on_client_message(mut self, mut message: device::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
@@ -133,6 +173,22 @@ impl ClientConnection {
             if let Some(previous_connection) = previous_connection {
                 tokio::spawn(previous_connection.disconnect());
             }
+
+            let forwards: Vec<world::SshForward> = {
+                let world = self.world.read().unwrap();
+                let device = world.devices.get(&device_id).unwrap();
+                device.ssh_forwards.iter().map(|forward| forward.clone()).collect()
+            };
+
+            let future = {
+                let tx = self.tx.clone();
+                let futures = forwards.into_iter().map(move |forward| Self::sender_send_connect_ssh(tx.clone(), forward));
+                futures::future::join_all(futures)
+            };
+
+            let future = future.map(|_| self);
+
+            return Box::new(future);
         }
 
         /*
@@ -189,6 +245,26 @@ impl ClientConnection {
                     cancel_handle.cancel().unwrap();
                 }
 
+                Box::new(futures::future::ok(self))
+            },
+            BackchannelMessage::SshConnect(id) => {
+                let forward = {
+                    let world = self.world.read().unwrap();
+                    let device = world.devices.get(&self.device_id.clone().expect("An ID should exist at this point")).unwrap();
+                    device.ssh_forwards.find(&id).map(|forward| forward.clone())
+                };
+                if let Some(forward) = forward {
+                    let future = Self::sender_send_connect_ssh(self.tx.clone(), forward);
+                    let f = future
+                        .map(|_| self);
+                    Box::new(f)
+                }
+                else {
+                    Box::new(futures::future::ok(self))
+                }
+            },
+            _ => {
+                // TODO: Connect/disconnect
                 Box::new(futures::future::ok(self))
             }
         }
@@ -278,4 +354,6 @@ enum ClientBackchannelCombinedMessage {
 #[derive(Debug)]
 enum BackchannelMessage {
     Disconnect,
+    SshConnect(String),
+    SshDisconnect(String),
 }

@@ -208,7 +208,7 @@ impl Client {
 
     fn on_client_message(self, message: device::ServerMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
-            println!("↑ {:4}: {:?}", &self.id, message);
+            println!("↓ {:4}: {:?}", &self.id, message);
         }
 
         if message.has_ping() {
