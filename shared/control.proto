@@ -97,10 +97,12 @@ message SshConnection {
 
   // Disable an SSH connection. Once a connection is disabled, it cannot be
   // re-enabled. (A new SSH connection would be needed instead of re-enabling.)
-  message Disable {}
+  message Disable {
+    string connection_id = 1;
+  }
 
   // The ID of the device
-  string client_id = 1;
+  string device_id = 1;
   oneof msg {
     Enable enable = 2;
     Disable disable = 3;
@@ -113,8 +115,11 @@ message SshConnectionResponse {
     SUCCESS = 1;
     ERROR = 2;
   }
+
+  // Whether the request succeeded or failed.
+  Status status = 1;
   // The new globally unique ID of the SSH request (which can be used to disconnect later)
-  string request_id = 2;
+  string connection_id = 2;
   // The remote port that has been allocated.
   uint32 remote_port = 3;
 }

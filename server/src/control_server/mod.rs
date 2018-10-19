@@ -91,12 +91,52 @@ impl Server {
                 return Box::new(f);
             }
 
+            if message.has_ssh_connection() {
+                let ssh_connection = message.take_ssh_connection();
+                let device_id = ssh_connection.get_device_id();
+
+                if ssh_connection.has_enable() {
+                    println!("Pretending to create SSH connection for {}", device_id);
+
+                    let mut ssh_connection_response = control::SshConnectionResponse::new();
+                    ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+
+                    let mut response = control::ServerMessage::new();
+                    response.set_ssh_connection_response(ssh_connection_response);
+                    response.set_in_response_to(message.get_message_id());
+
+                    let f = tx.clone().send(response)
+                        .map(|_| ())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                    return Box::new(f);
+                }
+
+                if ssh_connection.has_disable() {
+                    println!("Pretending to disable SSH connection for {}", device_id);
+
+                    let mut ssh_connection_response = control::SshConnectionResponse::new();
+                    ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+
+                    let mut response = control::ServerMessage::new();
+                    response.set_ssh_connection_response(ssh_connection_response);
+                    response.set_in_response_to(message.get_message_id());
+
+                    let f = tx.clone().send(response)
+                        .map(|_| ())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                    return Box::new(f);
+                }
+            }
+
             if message.has_create_device() {
-                let device_id: String = message.take_create_device().get_device_id().into();
+                let create_device = message.take_create_device();
+                let device_id = create_device.get_device_id();
 
                 let r = {
                     let mut world = world.write().unwrap();
-                    match world.create_device(&device_id) {
+                    match world.create_device(device_id) {
                         Ok(_) => control::CreateDeviceResponse_Response::CREATED,
                         Err(_) => control::CreateDeviceResponse_Response::EXISTS,
                     }

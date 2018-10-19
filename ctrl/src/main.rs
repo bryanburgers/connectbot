@@ -21,8 +21,36 @@ fn main() {
              .help("The address to use to communicate with the lights daemon")
              .takes_value(true)
              .default_value("[::1]:12345"))
-        .subcommand(SubCommand::with_name("connect"))
-        .subcommand(SubCommand::with_name("disconnect"))
+        .subcommand(SubCommand::with_name("connect")
+                    .about("Create an SSH connection")
+                    .arg(Arg::with_name("device")
+                         .help("The id of the device to connect")
+                         .required(true)
+                         .takes_value(true))
+                    .arg(Arg::with_name("port")
+                         .short("p")
+                         .long("port")
+                         .validator(|item| {
+                             match item.parse::<i32>() {
+                                 Ok(0) => Err("Port must be a valid port number".to_string()),
+                                 Ok(_) => Ok(()),
+                                 Err(_) => Err("Port must be a valid port number".to_string()),
+                             }
+                         })
+                         .help("The local port to forward")
+                         .required(true)
+                         .takes_value(true)))
+        .subcommand(SubCommand::with_name("disconnect")
+                    .about("Disconnect an SSH connection")
+                    .arg(Arg::with_name("device")
+                         .help("The id of the device to connect")
+                         .required(true)
+                         .takes_value(true))
+                    .arg(Arg::with_name("connection-id")
+                         .long("connection-id")
+                         .help("The connection ID of the SSH connection to disconnect")
+                         .required(true)
+                         .takes_value(true)))
         .subcommand(SubCommand::with_name("query")
                     .about("Dump information about devices connected to the server"))
         .subcommand(SubCommand::with_name("remove")
@@ -44,6 +72,8 @@ fn main() {
     let client = CommsClient::new(&addr);
 
     match matches.subcommand() {
+        ("connect", Some(matches)) => connect(client, matches),
+        ("disconnect", Some(matches)) => disconnect(client, matches),
         ("query", Some(matches)) => query(client, matches),
         ("create", Some(matches)) => create(client, matches),
         ("remove", Some(matches)) => remove(client, matches),
@@ -51,10 +81,33 @@ fn main() {
     }
 }
 
+fn connect(client: CommsClient, matches: &clap::ArgMatches) {
+    let device_id = matches.value_of("device").unwrap();
+    let port = matches.value_of("port").unwrap().parse().unwrap();
+    let future = client.connect_device(device_id, port)
+        .map(|response| {
+            println!("{:#?}", response);
+        })
+        .map_err(|e| println!("Error: {}", e));
+
+    tokio::run(future);
+}
+
+fn disconnect(client: CommsClient, matches: &clap::ArgMatches) {
+    let device_id = matches.value_of("device").unwrap();
+    let connection_id = matches.value_of("connection-id").unwrap();
+    let future = client.disconnect_connection(device_id, connection_id)
+        .map(|response| {
+            println!("{:#?}", response);
+        })
+        .map_err(|e| println!("Error: {}", e));
+
+    tokio::run(future);
+}
+
 fn query(client: CommsClient, _matches: &clap::ArgMatches) {
     let future = client.get_clients()
         .map(|clients| {
-            println!("Received message!");
             println!("{:#?}", clients);
         })
         .map_err(|e| println!("Error: {}", e));
@@ -66,7 +119,6 @@ fn create(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let future = client.create_device(device_id)
         .map(|response| {
-            println!("Received message!");
             println!("{:#?}", response);
         })
         .map_err(|e| println!("Error: {}", e));
@@ -78,7 +130,6 @@ fn remove(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let future = client.remove_device(device_id)
         .map(|response| {
-            println!("Received message!");
             println!("{:#?}", response);
         })
         .map_err(|e| println!("Error: {}", e));

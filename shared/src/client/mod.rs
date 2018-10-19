@@ -32,6 +32,36 @@ impl Client {
         }
     }
 
+    pub fn connect_device(&self, device_id: &str, port: u16) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
+        let mut message = protos::control::ClientMessage::new();
+        let mut ssh_connection = protos::control::SshConnection::new();
+        let mut enable = protos::control::SshConnection_Enable::new();
+        enable.set_forward_host("localhost".into());
+        enable.set_forward_port(port as u32);
+        enable.set_gateway_port(true);
+        ssh_connection.set_device_id(device_id.into());
+        ssh_connection.set_enable(enable);
+        message.set_message_id(1);
+        message.set_ssh_connection(ssh_connection);
+
+        RequestResponseFuture::new(&self.addr, message)
+            .map(|mut response| response.take_ssh_connection_response())
+    }
+
+    pub fn disconnect_connection(&self, device_id: &str, connection_id: &str) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
+        let mut message = protos::control::ClientMessage::new();
+        let mut ssh_connection = protos::control::SshConnection::new();
+        let mut disable = protos::control::SshConnection_Disable::new();
+        disable.set_connection_id(connection_id.into());
+        ssh_connection.set_device_id(device_id.into());
+        ssh_connection.set_disable(disable);
+        message.set_message_id(1);
+        message.set_ssh_connection(ssh_connection);
+
+        RequestResponseFuture::new(&self.addr, message)
+            .map(|mut response| response.take_ssh_connection_response())
+    }
+
     pub fn create_device(&self, device_id: &str) -> impl Future<Item=protos::control::CreateDeviceResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut create_device = protos::control::CreateDevice::new();
