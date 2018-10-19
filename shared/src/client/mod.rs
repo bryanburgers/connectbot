@@ -31,6 +31,28 @@ impl Client {
             inner: RequestResponseFuture::new(&self.addr, message),
         }
     }
+
+    pub fn create_device(&self, device_id: &str) -> impl Future<Item=protos::control::CreateDeviceResponse, Error=std::io::Error> {
+        let mut message = protos::control::ClientMessage::new();
+        let mut create_device = protos::control::CreateDevice::new();
+        create_device.set_device_id(device_id.into());
+        message.set_message_id(1);
+        message.set_create_device(create_device);
+
+        RequestResponseFuture::new(&self.addr, message)
+            .map(|mut response| response.take_create_device_response())
+    }
+
+    pub fn remove_device(&self, device_id: &str) -> impl Future<Item=protos::control::RemoveDeviceResponse, Error=std::io::Error> {
+        let mut message = protos::control::ClientMessage::new();
+        let mut remove_device = protos::control::RemoveDevice::new();
+        remove_device.set_device_id(device_id.into());
+        message.set_message_id(1);
+        message.set_remove_device(remove_device);
+
+        RequestResponseFuture::new(&self.addr, message)
+            .map(|mut response| response.take_remove_device_response())
+    }
 }
 
 pub struct GetStateFuture {

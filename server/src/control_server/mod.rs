@@ -40,7 +40,7 @@ impl Server {
 
         let world = self.world.clone();
 
-        stream.for_each(move |message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
+        stream.for_each(move |mut message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
             if message.has_clients_request() {
                 let mut clients = Vec::new();
                 {
@@ -82,6 +82,66 @@ impl Server {
 
                 let mut response = control::ServerMessage::new();
                 response.set_clients_response(clients_response);
+                response.set_in_response_to(message.get_message_id());
+
+                let f = tx.clone().send(response)
+                    .map(|_| ())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                return Box::new(f);
+            }
+
+            if message.has_create_device() {
+                let device_id: String = message.take_create_device().get_device_id().into();
+
+                let r = {
+                    let mut world = world.write().unwrap();
+                    match world.create_device(&device_id) {
+                        Ok(_) => control::CreateDeviceResponse_Response::CREATED,
+                        Err(_) => control::CreateDeviceResponse_Response::EXISTS,
+                    }
+                };
+
+                let mut create_device_response = control::CreateDeviceResponse::new();
+                create_device_response.set_response(r);
+
+                let mut response = control::ServerMessage::new();
+                response.set_create_device_response(create_device_response);
+                response.set_in_response_to(message.get_message_id());
+
+                let f = tx.clone().send(response)
+                    .map(|_| ())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                return Box::new(f);
+            }
+
+            if message.has_remove_device() {
+                let device_id: String = message.take_remove_device().get_device_id().into();
+
+                let r = {
+                    let mut world = world.write().unwrap();
+                    let is_connected = world.devices
+                        .get(&device_id)
+                        .map(|device| device.is_connected())
+                        .unwrap_or(false);
+
+                    if !is_connected {
+                        match world.devices.remove(&device_id) {
+                            Some(_) => control::RemoveDeviceResponse_Response::REMOVED,
+                            None => control::RemoveDeviceResponse_Response::NOT_FOUND,
+                        }
+                    }
+                    else {
+                        control::RemoveDeviceResponse_Response::ACTIVE
+                    }
+                };
+
+                let mut remove_device_response = control::RemoveDeviceResponse::new();
+                remove_device_response.set_response(r);
+
+                let mut response = control::ServerMessage::new();
+                response.set_remove_device_response(remove_device_response);
                 response.set_in_response_to(message.get_message_id());
 
                 let f = tx.clone().send(response)

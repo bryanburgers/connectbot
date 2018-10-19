@@ -39,6 +39,22 @@ impl World {
         }
     }
 
+    /// Create a device manually
+    ///
+    /// Returns Ok(()) if the device was created successfully, or Err(()) if the device already
+    /// exists. This method is useful for manually creating devices (e.g. via the ctrl tool)
+    pub fn create_device(&mut self, id: &str) -> Result<(), ()> {
+        let entry = self.devices.entry(id.to_string());
+
+        match entry {
+            std::collections::hash_map::Entry::Occupied(_) => Err(()),
+            std::collections::hash_map::Entry::Vacant(v) => {
+                v.insert(Device::new(id));
+                Ok(())
+            }
+        }
+    }
+
     /// Mark the device with the given connection handle as connected.
     ///
     /// Returns the previous connection handle, if one existed. (This makes it possible to
@@ -109,6 +125,13 @@ impl Device {
             ssh_forwards: HashMap::new(),
             active_connection: None,
             connection_history: ConnectionHistory::new(),
+        }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        match self.connection_status {
+            ConnectionStatus::Connected { .. } => true,
+            _ => false,
         }
     }
 }

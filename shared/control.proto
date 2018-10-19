@@ -8,6 +8,8 @@ message ClientMessage {
   oneof msg {
     ClientsRequest clients_request = 3;
     SshConnection ssh_connection = 4;
+    CreateDevice create_device = 5;
+    RemoveDevice remove_device = 6;
   }
 }
 
@@ -17,6 +19,8 @@ message ServerMessage {
   oneof msg {
     ClientsResponse clients_response = 3;
     SshConnectionResponse ssh_connection_response = 4;
+    CreateDeviceResponse create_device_response = 5;
+    RemoveDeviceResponse remove_device_response = 6;
   }
 }
 
@@ -113,4 +117,33 @@ message SshConnectionResponse {
   string request_id = 2;
   // The remote port that has been allocated.
   uint32 remote_port = 3;
+}
+
+message CreateDevice {
+  string device_id = 1;
+}
+
+message CreateDeviceResponse {
+  enum Response {
+    UNKNOWN_RESPONSE = 0;
+    CREATED = 1;
+    EXISTS = 2;
+  }
+
+  Response response = 1;
+}
+
+message RemoveDevice {
+  string device_id = 1;
+}
+
+message RemoveDeviceResponse {
+  enum Response {
+    UNKNOWN_RESPONSE = 0;
+    REMOVED = 1;
+    ACTIVE = 2;
+    NOT_FOUND = 3;
+  }
+
+  Response response = 1;
 }
