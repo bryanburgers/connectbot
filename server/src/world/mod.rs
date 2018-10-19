@@ -8,6 +8,11 @@ use super::device_server::client_connection::ClientConnectionHandle;
 
 use std;
 
+mod connection_history;
+pub use self::connection_history::{ConnectionHistory, ConnectionHistoryItem};
+mod ssh_forward;
+pub use self::ssh_forward::{SshForwards, SshForward, SshForwardClientState, SshForwardServerState};
+
 pub type SharedWorld = Arc<RwLock<World>>;
 
 /// The state of the entire world
@@ -36,6 +41,7 @@ impl World {
 
         for mut device in self.devices.values_mut() {
             device.connection_history.cleanup(connection_history_cutoff);
+            device.ssh_forwards.cleanup();
         }
     }
 
@@ -109,7 +115,7 @@ pub struct Device {
     /// Whether the device is currently connected
     pub connection_status: ConnectionStatus,
     /// Information about forwards for the current device
-    pub ssh_forwards: HashMap<String, SshForward>,
+    pub ssh_forwards: SshForwards,
     /// If there is an active connection for the device, a handle to that connection.
     pub active_connection: Option<ClientConnectionHandle>,
     /// Connection history
@@ -122,7 +128,7 @@ impl Device {
             id: id.to_owned(),
             name: id.to_owned(),
             connection_status: ConnectionStatus::Unknown,
-            ssh_forwards: HashMap::new(),
+            ssh_forwards: SshForwards::new(),
             active_connection: None,
             connection_history: ConnectionHistory::new(),
         }
@@ -134,66 +140,6 @@ impl Device {
             _ => false,
         }
     }
-}
-
-/// A history of the times in recent memory that the device has been connected.
-#[derive(Debug)]
-pub struct ConnectionHistory(Vec<ConnectionHistoryItem>);
-
-impl ConnectionHistory {
-    pub fn new() -> ConnectionHistory {
-        ConnectionHistory(Vec::new())
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<ConnectionHistoryItem> {
-        self.0.iter()
-    }
-
-    pub fn connect(&mut self, connection_id: usize, connected_at: DateTime<Utc>, address: IpAddr) {
-        self.0.push(ConnectionHistoryItem::Open { connection_id, connected_at, address });
-    }
-
-    pub fn disconnect(&mut self, connection_id: usize, last_message: DateTime<Utc>) {
-        for i in 0..self.0.len() {
-            let replace = match &self.0[i] {
-                ConnectionHistoryItem::Open { connection_id: ref conn_id, ref connected_at, ref address } if connection_id == *conn_id => {
-                    // Replace the existing open item with a closed item
-                    Some(ConnectionHistoryItem::Closed { connected_at: connected_at.clone(), last_message, address: address.clone() })
-                },
-                // Don't replace.
-                _ => None,
-            };
-
-            if let Some(replace) = replace {
-                self.0[i] = replace;
-                break;
-            }
-        }
-    }
-
-    pub fn cleanup(&mut self, cutoff: DateTime<Utc>) {
-        self.0.retain(|item| {
-            match item {
-                ConnectionHistoryItem::Closed { last_message, .. } if last_message < &cutoff => false,
-                _ => true,
-            }
-        });
-    }
-}
-
-/// A single connection history event
-#[derive(Debug)]
-pub enum ConnectionHistoryItem {
-    /// A period of time in the past when the device was connected.
-    Closed { connected_at: DateTime<Utc>, last_message: DateTime<Utc>, address: IpAddr },
-    /// The device is currently connected, and that connection started at the given time.
-    Open { connection_id: usize, connected_at: DateTime<Utc>, address: IpAddr },
-}
-
-/// Information about a single ssh forwarding
-#[derive(Debug)]
-pub struct SshForward {
-    pub id: String,
 }
 
 /// The connection status for a device

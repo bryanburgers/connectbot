@@ -53,6 +53,30 @@ impl Server {
                             client_data.set_address(address.to_string().into());
                         }
 
+                        let mut connections = Vec::new();
+                        for forward in device.ssh_forwards.iter() {
+                            let mut connection = control::ClientsResponse_Connection::new();
+                            connection.set_id(forward.id.clone().into());
+                            connection.set_state(match forward.client_state {
+                                world::SshForwardClientState::Requested => control::ClientsResponse_State::REQUESTED,
+                                world::SshForwardClientState::Connecting => control::ClientsResponse_State::CONNECTING,
+                                world::SshForwardClientState::Connected => control::ClientsResponse_State::CONNECTED,
+                                world::SshForwardClientState::Disconnecting => control::ClientsResponse_State::DISCONNECTING,
+                                world::SshForwardClientState::Disconnected => control::ClientsResponse_State::DISCONNECTED,
+                                world::SshForwardClientState::Failed => control::ClientsResponse_State::FAILED,
+                            });
+                            connection.set_active(match forward.server_state {
+                                world::SshForwardServerState::Active => control::ClientsResponse_ActiveState::ACTIVE,
+                                world::SshForwardServerState::Inactive => control::ClientsResponse_ActiveState::INACTIVE,
+                            });
+                            connection.set_forward_host(forward.forward_host.clone().into());
+                            connection.set_forward_port(forward.forward_port as u32);
+                            connection.set_remote_port(forward.remote_port as u32);
+                            connection.set_gateway_port(forward.gateway_port);
+                            connections.push(connection);
+                        }
+                        client_data.set_connections(connections.into());
+
                         let mut connection_history = Vec::new();
                         for connection_history_item in device.connection_history.iter() {
                             let mut history_item = control::ClientsResponse_ConnectionHistoryItem::new();
@@ -92,14 +116,33 @@ impl Server {
             }
 
             if message.has_ssh_connection() {
-                let ssh_connection = message.take_ssh_connection();
-                let device_id = ssh_connection.get_device_id();
+                let mut ssh_connection = message.take_ssh_connection();
+                let device_id = ssh_connection.get_device_id().to_string();
 
                 if ssh_connection.has_enable() {
-                    println!("Pretending to create SSH connection for {}", device_id);
+                    let enable = ssh_connection.take_enable();
+                    let mut world = world.write().unwrap();
+
+                    let device = world.devices.get_mut(&device_id);
 
                     let mut ssh_connection_response = control::SshConnectionResponse::new();
-                    ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+
+                    if let Some(device) = device {
+                        let forward_host = enable.get_forward_host();
+                        // TODO: Make sure this is non-zero u16
+                        let forward_port = enable.get_forward_port();
+                        let gateway_port = enable.get_gateway_port();
+                        let remote_port = 0;
+                        let forward = device.ssh_forwards.create(forward_host.into(), forward_port as u16, remote_port, gateway_port);
+
+                        ssh_connection_response.set_status(control::SshConnectionResponse_Status::SUCCESS);
+                        ssh_connection_response.set_connection_id(forward.id.clone().into());
+                        ssh_connection_response.set_remote_port(remote_port as u32);
+                    }
+                    else {
+                        // ERROR
+                        ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+                    }
 
                     let mut response = control::ServerMessage::new();
                     response.set_ssh_connection_response(ssh_connection_response);
@@ -113,10 +156,22 @@ impl Server {
                 }
 
                 if ssh_connection.has_disable() {
-                    println!("Pretending to disable SSH connection for {}", device_id);
+                    let disable = ssh_connection.take_disable();
+                    let mut world = world.write().unwrap();
+
+                    let device = world.devices.get_mut(&device_id);
 
                     let mut ssh_connection_response = control::SshConnectionResponse::new();
-                    ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+
+                    if let Some(device) = device {
+                        let connection_id = disable.get_connection_id();
+
+                        device.ssh_forwards.disconnect(connection_id);
+                        ssh_connection_response.set_status(control::SshConnectionResponse_Status::SUCCESS);
+                    }
+                    else {
+                        ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+                    }
 
                     let mut response = control::ServerMessage::new();
                     response.set_ssh_connection_response(ssh_connection_response);

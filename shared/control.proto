@@ -48,14 +48,21 @@ message ClientsResponse {
     FAILED = 6;
   }
 
+  enum ActiveState {
+    UNKNOWN_ACTIVE_STATE = 0;
+    ACTIVE = 1;
+    INACTIVE = 2;
+  }
+
   message Connection {
     // The globally unique ID of the client.
     string id = 1;
     State state = 2;
-    string forward_host = 3;
-    uint32 forward_port = 4;
-    uint32 remote_port = 5;
-    bool gateway_port = 6;
+    ActiveState active = 3;
+    string forward_host = 4;
+    uint32 forward_port = 5;
+    uint32 remote_port = 6;
+    bool gateway_port = 7;
   }
 
   enum ConnectionHistoryType {
