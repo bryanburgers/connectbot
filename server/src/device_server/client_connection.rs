@@ -63,21 +63,21 @@ impl ClientConnectionHandle {
     pub fn disconnect(&self) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::Disconnect)
             .map(|_| ())
-            .map_err(|_| ())
+            .map_err(|err| panic!("{:?}", err))
     }
 
     /// Notify the client that an SSH connection should be handled
     pub fn connect_ssh(&self, id: &str) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::SshConnect(id.to_string()))
             .map(|_| ())
-            .map_err(|_| ())
+            .map_err(|err| panic!("{:?}", err))
     }
 
     /// Notify the client that an SSH disconnection should be handled
     pub fn disconnect_ssh(&self, id: &str) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::SshDisconnect(id.to_string()))
             .map(|_| ())
-            .map_err(|_| ())
+            .map_err(|err| panic!("{:?}", err))
     }
 
     pub fn get_id(&self) -> usize {
@@ -302,9 +302,9 @@ impl ClientConnection {
 
         // In order to send things to the client, we set up a channel, and we forward that
         // receiving end directly to the client on the TlsStream.
-        let client_message_sink = client_message_sink.sink_map_err(|_| ());
+        let client_message_sink = client_message_sink.sink_map_err(|err| panic!("{:?}", err));
         let rx = std::mem::replace(&mut self.rx, None);
-        let rx = rx.unwrap().map_err(|_| panic!());
+        let rx = rx.unwrap().map_err(|err| panic!("{:?}", err));
         let connection_id = self.id.clone();
         let rx_forward = rx.map(move |message| {
             if !message.has_ping() && !message.has_pong() {

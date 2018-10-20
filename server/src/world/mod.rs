@@ -101,6 +101,7 @@ impl World {
             // There is no active connection. Mark as disconnected.
             device.connection_status = ConnectionStatus::Disconnected { last_message: last_message };
         }
+        device.active_connection = None;
         device.connection_history.disconnect(connection_id, last_message);
     }
 }

@@ -208,7 +208,7 @@ impl Client {
 
     fn on_client_message(self, message: device::ServerMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
-            println!("↓ {:4}: {:?}", &self.id, message);
+            println!("↓ {:?}", message);
         }
 
         if message.has_ping() {
@@ -246,8 +246,8 @@ fn connect(id: String, connection_details: server_connection::ConnectionDetails,
 
     let (tx, rx): (futures::sync::mpsc::Sender<device::ClientMessage>, futures::sync::mpsc::Receiver<device::ClientMessage>) = futures::sync::mpsc::channel(0);
 
-    let sink = sink.sink_map_err(|_| ());
-    let rx = rx.map_err(|_| panic!());
+    let sink = sink.sink_map_err(|err| panic!("{}", err));
+    let rx = rx.map_err(|err| panic!("{:?}", err));
 
     let client = Client::new(id, tx);
 
@@ -293,5 +293,5 @@ fn connect(id: String, connection_details: server_connection::ConnectionDetails,
 
     stream_future.join(sender_future)
         .map(|_| ())
-        .map_err(|_| ())
+        .map_err(|err| panic!("{}", err))
 }

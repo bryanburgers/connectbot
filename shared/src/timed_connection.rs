@@ -49,6 +49,7 @@ impl Default for TimedConnectionOptions {
     }
 }
 
+#[derive(Debug)]
 pub enum TimedConnectionItem<T> {
     Item(T),
     Timeout,
