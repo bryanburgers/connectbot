@@ -54,16 +54,17 @@ impl<E: protobuf::Message, D> Encoder for Codec<E, D> {
     type Error = io::Error;
 
     fn encode(&mut self, client_message: E, buf: &mut BytesMut) -> Result<(), io::Error> {
+        let previous_len = buf.len();
         let size = client_message.compute_size() as usize;
         buf.put_u32_be(size as u32);
         buf.reserve(size);
 
         unsafe {
-            buf.set_len(4 + size);
+            buf.set_len(previous_len + 4 + size);
         }
 
         {
-            let mut coded_output_stream = protobuf::CodedOutputStream::bytes(&mut buf[4..]);
+            let mut coded_output_stream = protobuf::CodedOutputStream::bytes(&mut buf[previous_len + 4..]);
             client_message.write_to(&mut coded_output_stream)?;
         }
 

@@ -306,11 +306,10 @@ impl ClientConnection {
         let rx = std::mem::replace(&mut self.rx, None);
         let rx = rx.unwrap().map_err(|err| panic!("{:?}", err));
         let connection_id = self.id.clone();
-        let rx_forward = rx.map(move |message| {
+        let rx_forward = rx.inspect(move |message| {
             if !message.has_ping() && !message.has_pong() {
                 println!("↓ {:4}: {:?}", connection_id, message);
             }
-            message
         })
             .forward(client_message_sink)
             .then(|result| {
@@ -319,7 +318,6 @@ impl ClientConnection {
                 }
                 Ok(())
             });
-        tokio::spawn(rx_forward);
 
         // Combine the back channel and the client messages into a single stream
         let back_channel_stream = std::mem::replace(&mut self.back_channel, None).unwrap();
@@ -332,7 +330,7 @@ impl ClientConnection {
         self.cancel_handle = Some(cancel_handle);
 
         // Then handle each message as it comes in.
-        cancelable.fold(self, |client_connection, message| {
+        let send = cancelable.fold(self, |client_connection, message| {
             use self::ClientBackchannelCombinedMessage::*;
 
             match message {
@@ -341,7 +339,10 @@ impl ClientConnection {
                 Backchannel(message) => client_connection.on_backchannel_message(message),
             }
         })
-            .and_then(|client_connection| client_connection.on_disconnect())
+            .and_then(|client_connection| client_connection.on_disconnect());
+
+        send.join(rx_forward)
+            .map(|_| ())
     }
 }
 
