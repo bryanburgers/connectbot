@@ -25,6 +25,7 @@ use futures::{Future, Stream, Sink};
 use std::net::IpAddr;
 use connectbot_shared::protos::device;
 
+use rand::RngCore;
 use std::io::BufReader;
 use tokio_rustls::{
     rustls::{
@@ -42,7 +43,7 @@ fn load_keys(path: &str) -> Vec<PrivateKey> {
     rsa_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
 }
 
-fn main() {
+fn main() -> Result<(), std::io::Error> {
     let matches = App::new("connectbot-client")
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
@@ -103,7 +104,8 @@ fn main() {
     let address = matches.value_of("host").unwrap().to_string();
     let port = matches.value_of("port").unwrap().parse().unwrap();
     let connection = if let Some(resolve) = matches.value_of("resolve") {
-        let resolve = resolve.parse().unwrap();
+        let resolve = resolve.parse()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to parse --resolve as an address"))?;
 
         server_connection::ConnectionDetails::AddressWithResolve {
             address: address,
@@ -120,7 +122,7 @@ fn main() {
 
     let mut tls_config = ClientConfig::new();
     if let Some(cafile) = matches.value_of("cafile") {
-        let mut pem = BufReader::new(fs::File::open(cafile).unwrap());
+        let mut pem = BufReader::new(fs::File::open(cafile)?);
         tls_config.root_store.add_pem_file(&mut pem).unwrap();
     }
     else {
@@ -131,7 +133,15 @@ fn main() {
         tls_config.set_single_client_cert(load_certs(cert), load_keys(matches.value_of("key").unwrap()).remove(0));
     }
 
+    // Sometimes, Tokio fails to initialize because a thread pool panics. The thread pool panics
+    // because the random number generator is not initialized yet. However, Tokio swallows panics,
+    // so the application keeps running, doing nothing. In order to work around this, manually try
+    // the random number generator, so we can panic BEFORE we get to tokio::run.
+    check_rng_initialized()?;
+
     tokio::run(connect(id, connection, tls_config));
+
+    Ok(())
 
     /*
     let lazy = futures::lazy(|| {
@@ -172,6 +182,17 @@ fn main() {
 
     println!("After run");
     */
+}
+
+fn check_rng_initialized() -> Result<(), std::io::Error> {
+    // Sometimes, Tokio fails to initialize because a thread pool panics. The thread pool panics
+    // because the random number generator is not initialized yet. However, Tokio swallows panics,
+    // so the application keeps running, doing nothing. In order to work around this, manually try
+    // the random number generator, so we can panic BEFORE we get to tokio::run.
+    let mut x = [0; 1];
+    rand::thread_rng().try_fill_bytes(&mut x)?;
+
+    Ok(())
 }
 
 struct Client {
