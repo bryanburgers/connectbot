@@ -4,6 +4,7 @@ extern crate chrono;
 extern crate futures;
 extern crate protobuf;
 // extern crate rand;
+extern crate serde;
 // extern crate signal_hook;
 extern crate tokio;
 // extern crate tokio_dns;
@@ -12,18 +13,24 @@ extern crate tokio_threadpool;
 extern crate tokio_timer;
 extern crate tokio_codec;
 extern crate tokio_rustls;
+extern crate toml;
 extern crate uuid;
+
+#[macro_use]
+extern crate serde_derive;
 
 extern crate connectbot_shared;
 
+mod config;
 mod control_server;
 mod device_server;
 mod world;
 
-use clap::{Arg, App};
+use clap::{Arg, App, AppSettings, SubCommand};
 use tokio::net::TcpListener;
 use futures::{Future, Stream};
 use tokio_timer::Interval;
+use std::path::Path;
 use std::time::Duration;
 use chrono::Utc;
 
@@ -50,59 +57,53 @@ fn main() {
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
         .about("Communications")
-        .arg(Arg::with_name("address")
-             .short("a")
-             .long("address")
-             .help("The address to use to accept client connections")
-             .takes_value(true)
-             .default_value("[::]:4004"))
-        .arg(Arg::with_name("control-address")
+        .setting(AppSettings::SubcommandsNegateReqs)
+        .subcommand(SubCommand::with_name("config")
+                    .about("Generate an example config file"))
+        .arg(Arg::with_name("config")
              .short("c")
-             .long("control-address")
-             .help("The address to use to communicate on the control socket")
+             .long("config")
+             .help("The location of the config file")
              .takes_value(true)
-             .default_value("[::1]:12345"))
-        .arg(Arg::with_name("ca")
-             .long("ca")
-             .value_name("FILE")
-             .help("The location of the Certificate Authority pem/crt to use when authenticating clients. If this is not set, client-authentication is disabled")
-             .takes_value(true)
-             .required(false))
-        .arg(Arg::with_name("cert")
-             .long("cert")
-             .value_name("FILE")
-             .help("The location of the TLS certificate file (pem)")
-             .takes_value(true)
-             .required(true))
-        .arg(Arg::with_name("key")
-             .long("key")
-             .value_name("FILE")
-             .help("The location of the TLS key file (rsa)")
-             .takes_value(true)
-             .required(true))
+             .default_value("/etc/connectbot/server.config"))
         .get_matches();
 
+    if let Some(_matches) = matches.subcommand_matches("config") {
+        let config: config::ApplicationConfig = std::default::Default::default();
+        print!("{}", toml::to_string(&config).unwrap());
+        return;
+    }
+
+    let result = config::ApplicationConfig::from_file(Path::new(matches.value_of_os("config").unwrap()));
+    let config = match result {
+        Ok(config) => config,
+        Err(string) => {
+            println!("{}", string);
+            std::process::exit(1);
+        }
+    };
 
     let world = world::World::shared();
     let control_server = control_server::Server::new(world.clone());
     let device_server = device_server::Server::new(world.clone());
 
     let device_server_future = {
-        let addr = matches.value_of("address").unwrap();
-        let socket_addr = addr.parse().unwrap();
-        let cert_file = matches.value_of("cert").unwrap();
-        let key_file = matches.value_of("key").unwrap();
+        let addr = config.address;
+        let socket_addr = addr.parse().expect("address must be a valid socket address");
+        let cert_file = config.tls.certificate;
+        let key_file = config.tls.key;
 
-        let mut config = if let Some(ca) = matches.value_of("ca") {
-            let mut cert_store = RootCertStore::empty();
-            let mut pem = BufReader::new(fs::File::open(ca).expect("Unable to open specified CA file"));
-            cert_store.add_pem_file(&mut pem).unwrap();
-            ServerConfig::new(AllowAnyAnonymousOrAuthenticatedClient::new(cert_store))
-        }
-        else {
-            ServerConfig::new(NoClientAuth::new())
+        let mut config = match config.client_authentication {
+            Some(config::ClientAuthentication { ref required, ref ca }) if *required => {
+                let mut cert_store = RootCertStore::empty();
+                let mut pem = BufReader::new(fs::File::open(ca).expect("Unable to open specified CA file"));
+                cert_store.add_pem_file(&mut pem).unwrap();
+                ServerConfig::new(AllowAnyAnonymousOrAuthenticatedClient::new(cert_store))
+            },
+            _ => ServerConfig::new(NoClientAuth::new()),
         };
-        config.set_single_cert(load_certs(cert_file), load_keys(key_file).remove(0))
+
+        config.set_single_cert(load_certs(&cert_file), load_keys(&key_file).remove(0))
             .expect("invalid key or certificate");
 
         device_server.listen(socket_addr, config)
@@ -110,8 +111,8 @@ fn main() {
     };
 
     let control_server_future = {
-        let addr = matches.value_of("control-address").unwrap();
-        let socket_addr = addr.parse().unwrap();
+        let addr = config.control_address;
+        let socket_addr = addr.parse().expect("control_address must be a valid socket address");
         let listener = TcpListener::bind(&socket_addr).unwrap();
         println!("Control channel listening on {}", &socket_addr);
         let server = control_server;

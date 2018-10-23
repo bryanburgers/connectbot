@@ -6,3 +6,4 @@
 *.pem
 *.srl
 *.cnf
+*.config
