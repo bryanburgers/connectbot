@@ -2,7 +2,10 @@ use std::default::Default;
 use std::path::Path;
 use std::fs::File;
 use std::io::Read;
+use std::sync::Arc;
 use toml;
+
+pub type SharedConfig = Arc<ApplicationConfig>;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ApplicationConfig {
@@ -10,7 +13,7 @@ pub struct ApplicationConfig {
     pub address: String,
     pub control_address: String,
     pub tls: Tls,
-    pub ssh: Option<Ssh>,
+    pub ssh: Ssh,
     pub client_authentication: Option<ClientAuthentication>,
 }
 
@@ -18,7 +21,7 @@ impl Default for ApplicationConfig {
     fn default() -> Self {
         ApplicationConfig {
             tls: Default::default(),
-            ssh: Some(Default::default()),
+            ssh: Default::default(),
             client_authentication: Some(Default::default()),
             address: "[::]:4004".to_string(),
             control_address: "[::1]:12345".to_string(),
@@ -79,6 +82,9 @@ pub struct Ssh {
     pub port: Option<u16>,
     pub user: Option<String>,
     pub private_key: Option<String>,
+    #[serde(skip_serializing)]
+    #[serde(skip_deserializing)]
+    pub private_key_data: Option<String>,
 }
 
 impl Default for Ssh {
@@ -88,6 +94,7 @@ impl Default for Ssh {
             port: Some(22),
             user: Some("reversessh".into()),
             private_key: Some("/home/reversessh/.ssh/id_rsa".into()),
+            private_key_data: None,
         }
     }
 }

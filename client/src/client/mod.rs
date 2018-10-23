@@ -97,6 +97,9 @@ impl Client {
             let tx = tx.clone();
             let settings = SshConnectionSettings {
                 id: id.clone(),
+                host: enable.get_ssh_host().to_string(),
+                port: enable.get_ssh_port() as u16,
+                username: enable.get_ssh_username().to_string(),
             };
             let future = SshConnection::new(settings);
             manager_ref.register_handle(&id.clone(), future.handle());

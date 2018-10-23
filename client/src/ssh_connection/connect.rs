@@ -68,7 +68,9 @@ impl ConnectData {
                                          "-M",
                                          "-S",
                                          &format!("/tmp/rssh-session-{}", settings.id),
-                                         "bjb3@127.0.0.1",
+                                         "-p",
+                                         &format!("{}", settings.port),
+                                         &format!("{}@{}", settings.username, settings.host),
                 ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())

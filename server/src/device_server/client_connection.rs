@@ -18,10 +18,12 @@ use tokio_rustls::rustls;
 
 use super::world::{self, SharedWorld};
 
+use config::SharedConfig;
 use super::stream_helpers::{CancelableStream, CancelHandle, PrimarySecondaryStream};
 
 /// An active client connection that is currently being processed
 pub struct ClientConnection {
+    config: SharedConfig,
     /// The UUID of the *Connection* (not the client ID)
     id: usize,
     /// The state of the entire World
@@ -87,11 +89,12 @@ impl ClientConnectionHandle {
 
 impl ClientConnection {
     /// Create a new client
-    pub fn new(id: usize, addr: SocketAddr, world: SharedWorld) -> ClientConnection {
+    pub fn new(id: usize, addr: SocketAddr, world: SharedWorld, config: SharedConfig) -> ClientConnection {
         let (sender, receiver) = channel(3);
         let (tx, rx) = futures::sync::mpsc::channel(0);
 
         ClientConnection {
+            config: config,
             id: id,
             world: world,
             address: addr,
@@ -113,14 +116,15 @@ impl ClientConnection {
         }
     }
 
-    fn sender_send_connect_ssh(tx: Sender<device::ServerMessage>, ssh_forward: world::SshForward) -> impl Future<Item=(), Error=std::io::Error> + Send {
+    fn sender_send_connect_ssh(tx: Sender<device::ServerMessage>, ssh_forward: world::SshForward, config: SharedConfig) -> impl Future<Item=(), Error=std::io::Error> + Send {
         let mut enable = device::SshConnection_Enable::new();
 
-        // TODO: Don't hardcode these.
-        enable.set_ssh_host("test".into());
-        enable.set_ssh_port(22);
-        enable.set_ssh_username("test".into());
-        // enable.set_ssh_key();
+        enable.set_ssh_host(config.ssh.host.as_ref().map(String::as_str).unwrap_or("localhost").into());
+        enable.set_ssh_port(*config.ssh.port.as_ref().unwrap_or(&22) as u32);
+        enable.set_ssh_username(config.ssh.user.as_ref().map(String::as_str).unwrap_or("test").into());
+        if let Some(ref ssh_key) = config.ssh.private_key_data {
+            enable.set_ssh_key(String::as_str(ssh_key).into());
+        }
 
         enable.set_forward_host(ssh_forward.forward_host.clone().into());
         enable.set_forward_port(ssh_forward.forward_port as u32);
@@ -200,7 +204,8 @@ impl ClientConnection {
 
             let future = {
                 let tx = self.tx.clone();
-                let futures = forwards.into_iter().map(move |forward| Self::sender_send_connect_ssh(tx.clone(), forward));
+                let config = self.config.clone();
+                let futures = forwards.into_iter().map(move |forward| Self::sender_send_connect_ssh(tx.clone(), forward, config.clone()));
                 futures::future::join_all(futures)
             };
 
@@ -320,7 +325,7 @@ impl ClientConnection {
                     device.ssh_forwards.find(&id).map(|forward| forward.clone())
                 };
                 if let Some(forward) = forward {
-                    let future = Self::sender_send_connect_ssh(self.tx.clone(), forward);
+                    let future = Self::sender_send_connect_ssh(self.tx.clone(), forward, self.config.clone());
                     let f = future
                         .map(|_| self);
                     Box::new(f)

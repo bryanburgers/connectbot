@@ -33,8 +33,9 @@ use tokio_timer::Interval;
 use std::path::Path;
 use std::time::Duration;
 use chrono::Utc;
+use std::sync::Arc;
 
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::fs::{self, File};
 
 use tokio_rustls::{
@@ -75,7 +76,7 @@ fn main() {
     }
 
     let result = config::ApplicationConfig::from_file(Path::new(matches.value_of_os("config").unwrap()));
-    let config = match result {
+    let mut config = match result {
         Ok(config) => config,
         Err(string) => {
             println!("{}", string);
@@ -83,15 +84,23 @@ fn main() {
         }
     };
 
+    if let Some(ref private_key) = config.ssh.private_key {
+        let mut data = String::new();
+        let mut file = fs::File::open(private_key).expect("Unable to open private key file");
+        file.read_to_string(&mut data).expect("Unable to read private key file");
+        config.ssh.private_key_data = Some(data);
+    }
+
     let world = world::World::shared();
     let control_server = control_server::Server::new(world.clone());
-    let device_server = device_server::Server::new(world.clone());
+    let config = Arc::new(config);
+    let device_server = device_server::Server::new(world.clone(), config.clone());
 
     let device_server_future = {
-        let addr = config.address;
+        let addr = &config.address;
         let socket_addr = addr.parse().expect("address must be a valid socket address");
-        let cert_file = config.tls.certificate;
-        let key_file = config.tls.key;
+        let cert_file = &config.tls.certificate;
+        let key_file = &config.tls.key;
 
         let mut config = match config.client_authentication {
             Some(config::ClientAuthentication { ref required, ref ca }) if *required => {
@@ -111,7 +120,7 @@ fn main() {
     };
 
     let control_server_future = {
-        let addr = config.control_address;
+        let addr = &config.control_address;
         let socket_addr = addr.parse().expect("control_address must be a valid socket address");
         let listener = TcpListener::bind(&socket_addr).unwrap();
         println!("Control channel listening on {}", &socket_addr);

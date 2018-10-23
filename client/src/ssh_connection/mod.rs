@@ -19,6 +19,9 @@ use self::disconnect::Disconnect;
 #[derive(Debug, Clone)]
 pub struct SshConnectionSettings {
     pub id: String,
+    pub host: String,
+    pub username: String,
+    pub port: u16,
 }
 
 /// A stream that handles a "persistent" SSH connection.

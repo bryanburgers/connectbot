@@ -2,6 +2,7 @@ use std;
 use tokio;
 use futures::{Future, Stream};
 
+use config::SharedConfig;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -23,13 +24,15 @@ use self::client_connection::ClientConnection;
 pub struct Server {
     next_connection_id: usize,
     world: SharedWorld,
+    config: SharedConfig,
 }
 
 impl Server {
-    pub fn new(world: world::SharedWorld) -> Server {
+    pub fn new(world: world::SharedWorld, config: SharedConfig) -> Server {
         Server {
             world: world,
             next_connection_id: 1,
+            config,
         }
     }
 
@@ -80,7 +83,7 @@ impl Server {
     {
         println!("! {:4}: connected from {}", connection_id, &addr.ip());
 
-        let connection = ClientConnection::new(connection_id, addr, self.world.clone());
+        let connection = ClientConnection::new(connection_id, addr, self.world.clone(), self.config.clone());
         connection.handle_connection(stream)
     }
 }
