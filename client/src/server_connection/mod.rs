@@ -2,26 +2,21 @@ use futures::{Async, Future, Poll, Stream, Sink, StartSend, AsyncSink, stream};
 use std;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio_codec;
 use tokio_dns;
-use tokio_rustls::TlsStream;
 use tokio_timer::Delay;
 
 use connectbot_shared::codec::Codec;
 use connectbot_shared::protos::device;
 use connectbot_shared::timed_connection::{TimedConnection, TimedConnectionOptions, TimedConnectionItem};
 
-use std::io::BufReader;
 use tokio_rustls::{
     self,
     TlsConnector,
-    rustls::{
-        Certificate, ClientConfig, PrivateKey, ClientSession,
-        internal::pemfile::{ certs, rsa_private_keys },
-    },
+    rustls::ClientConfig,
     webpki
 };
 
@@ -53,7 +48,7 @@ pub struct ServerConnection {
     connection_details: ConnectionDetails,
     arc_config: Arc<ClientConfig>,
     /// Whether a disconnect has been requested.
-    disconnect: Arc<AtomicBool>,
+    _disconnect: Arc<AtomicBool>,
     /// The number of consecutive failures, used for backoff
     failures: usize,
     /// The state machine
@@ -71,7 +66,7 @@ impl ServerConnection {
         ServerConnection {
             connection_details,
             arc_config,
-            disconnect,
+            _disconnect: disconnect,
             failures: 0,
             state: ServerConnectionStateMachine::Requested,
             sink_buffer: None,
