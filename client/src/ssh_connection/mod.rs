@@ -76,7 +76,7 @@ impl SshConnectionHandle {
 ///
 /// When a key event occurs in the connection lifecycle, one of these will be emitted from the
 /// stream.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum SshConnectionChange {
     /// The connection has started connecting
     Connecting,
@@ -170,8 +170,6 @@ impl Stream for SshConnection {
                                 self.failures = 0;
                                 let instant = Instant::now() + Duration::from_millis(10_000);
                                 self.state = Connected(Delay::new(instant));
-                                // TODO: We were already connected. Don't notify that again!
-                                // return Ok(Async::Ready(Some(SshConnectionChange::Connected)));
                             }
                             else {
                                 self.failures += 1;
@@ -179,7 +177,6 @@ impl Stream for SshConnection {
                                 self.state = Failed(Delay::new(instant));
                                 return Ok(Async::Ready(Some(SshConnectionChange::Failed(self.failures))));
                             }
-                            // return Ok(Async::NotReady);
                         },
                         Async::NotReady => {
                             self.state = Checking(future);

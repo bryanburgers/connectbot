@@ -1,22 +1,30 @@
 use device;
 use futures::{self, Future, Sink, Stream};
+use futures::sync::mpsc::{Receiver, Sender, channel};
 use server_connection;
+use ssh_connection::{SshConnection, SshConnectionChange};
+use ssh_manager::SshManager;
 use std;
+use tokio;
 
 use tokio_rustls::rustls::ClientConfig;
 
 struct Client {
     id: String,
     successful_connections: usize,
-    sender: futures::sync::mpsc::Sender<device::ClientMessage>,
+    sender: Sender<device::ClientMessage>,
+    ssh_manager: SshManager,
 }
 
 impl Client {
-    fn new(id: String, sender: futures::sync::mpsc::Sender<device::ClientMessage>) -> Client {
+    fn new(id: String, sender: Sender<device::ClientMessage>) -> Client {
+        let manager = SshManager::new();
+
         Client {
             id,
             successful_connections: 0,
             sender,
+            ssh_manager: manager,
         }
     }
 
@@ -37,7 +45,7 @@ impl Client {
         return Box::new(f);
     }
 
-    fn on_client_message(self, message: device::ServerMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
+    fn on_client_message(self, mut message: device::ServerMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
             println!("↓ {:?}", message);
         }
@@ -54,7 +62,82 @@ impl Client {
             return Box::new(f);
         }
 
+        if message.has_ssh_connection() {
+            let mut ssh_connection = message.take_ssh_connection();
+            if ssh_connection.has_enable() {
+                let enable = ssh_connection.take_enable();
+                let id = ssh_connection.get_id();
+
+                return Box::new(self.on_ssh_enable(id.to_string(), enable))
+            }
+
+            if ssh_connection.has_disable() {
+                let id = ssh_connection.get_id();
+                self.on_ssh_disable(id);
+            }
+        }
+
         Box::new(futures::future::ok(self))
+    }
+
+    fn on_ssh_enable(self, id: String, enable: device::SshConnection_Enable) -> impl Future<Item=Self, Error=std::io::Error> {
+        let state = self.ssh_manager.current_state(&id);
+        let tx = self.sender.clone();
+        let state = if let Some(state) = state {
+            match state {
+                SshConnectionChange::Connecting => device::SshConnectionStatus_State::CONNECTING,
+                SshConnectionChange::Connected => device::SshConnectionStatus_State::CONNECTED,
+                SshConnectionChange::Disconnecting => device::SshConnectionStatus_State::DISCONNECTING,
+                SshConnectionChange::Disconnected => device::SshConnectionStatus_State::DISCONNECTED,
+                SshConnectionChange::Failed(_) => device::SshConnectionStatus_State::FAILED,
+            }
+        }
+        else {
+            let manager_ref = self.ssh_manager.get_ref();
+            let tx = tx.clone();
+            let future = SshConnection::new();
+            manager_ref.register_handle(&id.clone(), future.handle());
+            let id = id.clone();
+            let future = future.for_each(move |item| {
+                manager_ref.update_state(&id.clone(), &item);
+
+                let mut ssh_connection_status = device::SshConnectionStatus::new();
+                let state = match item {
+                    SshConnectionChange::Connecting => device::SshConnectionStatus_State::CONNECTING,
+                    SshConnectionChange::Connected => device::SshConnectionStatus_State::CONNECTED,
+                    SshConnectionChange::Disconnecting => device::SshConnectionStatus_State::DISCONNECTING,
+                    SshConnectionChange::Disconnected => device::SshConnectionStatus_State::DISCONNECTED,
+                    SshConnectionChange::Failed(_) => device::SshConnectionStatus_State::FAILED,
+                };
+                ssh_connection_status.set_id(id.clone().into());
+                ssh_connection_status.set_state(state);
+
+                let mut client_message = device::ClientMessage::new();
+                client_message.set_ssh_status(ssh_connection_status);
+
+                tx.clone().send(client_message)
+                    .map(|_| ())
+                    .map_err(|err| println!("{}", err))
+            });
+            tokio::spawn(future);
+
+            device::SshConnectionStatus_State::REQUESTED
+        };
+
+        let mut ssh_connection_status = device::SshConnectionStatus::new();
+        ssh_connection_status.set_id(id.clone().into());
+        ssh_connection_status.set_state(state);
+
+        let mut client_message = device::ClientMessage::new();
+        client_message.set_ssh_status(ssh_connection_status);
+
+        tx.send(client_message)
+            .map(|_| self)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to send message"))
+    }
+
+    fn on_ssh_disable(&self, id: &str) {
+        self.ssh_manager.disable(id);
     }
 
     fn on_timeout_warning(self) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
@@ -75,7 +158,7 @@ pub fn connect(id: String, connection_details: server_connection::ConnectionDeta
 
     let (sink, stream) = server_connection.split();
 
-    let (tx, rx): (futures::sync::mpsc::Sender<device::ClientMessage>, futures::sync::mpsc::Receiver<device::ClientMessage>) = futures::sync::mpsc::channel(0);
+    let (tx, rx): (Sender<device::ClientMessage>, Receiver<device::ClientMessage>) = channel(0);
 
     let sink = sink.sink_map_err(|err| panic!("{}", err));
     let rx = rx.map_err(|err| panic!("{:?}", err));

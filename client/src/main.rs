@@ -17,8 +17,8 @@ extern crate webpki_roots;
 
 mod client;
 mod server_connection;
-// mod ssh_connection;
-
+mod ssh_connection;
+mod ssh_manager;
 
 use clap::{Arg, App};
 
