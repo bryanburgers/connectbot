@@ -12,15 +12,15 @@ pub struct Disconnect {
 }
 
 impl Disconnect {
-    pub fn new() -> Disconnect {
+    pub fn new(id: String) -> Disconnect {
         let f = poll_fn(move || {
             blocking(|| {
                 Command::new("ssh").args(&[
                                          "-O",
                                          "exit",
                                          "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
+                                         &format!("/tmp/rssh-session-{}", id),
+                                         "_",
                 ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())

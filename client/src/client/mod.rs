@@ -2,7 +2,7 @@ use device;
 use futures::{self, Future, Sink, Stream};
 use futures::sync::mpsc::{Receiver, Sender, channel};
 use server_connection;
-use ssh_connection::{SshConnection, SshConnectionChange};
+use ssh_connection::{SshConnection, SshConnectionChange, SshConnectionSettings};
 use ssh_manager::SshManager;
 use std;
 use tokio;
@@ -95,7 +95,10 @@ impl Client {
         else {
             let manager_ref = self.ssh_manager.get_ref();
             let tx = tx.clone();
-            let future = SshConnection::new();
+            let settings = SshConnectionSettings {
+                id: id.clone(),
+            };
+            let future = SshConnection::new(settings);
             manager_ref.register_handle(&id.clone(), future.handle());
             let id = id.clone();
             let future = future.for_each(move |item| {

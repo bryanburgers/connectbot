@@ -1,4 +1,5 @@
 use super::CommandFuture;
+use super::SshConnectionSettings;
 
 use ::std::process::{Command, Stdio};
 use ::futures::Future;
@@ -11,12 +12,14 @@ use ::tokio_threadpool::blocking;
 /// Returns true if the connection already exists or if a new connection succeeds, and false if the
 /// connection cannot be established.
 pub struct Connect {
-    data: ConnectData
+    settings: SshConnectionSettings,
+    data: ConnectData,
 }
 
 impl Connect {
-    pub fn new() -> Connect {
+    pub fn new(settings: SshConnectionSettings) -> Connect {
         Connect {
+            settings: settings,
             data: ConnectData::None,
         }
     }
@@ -31,15 +34,15 @@ enum ConnectData {
 
 impl ConnectData {
     /// Create a new half of a future that checks whether a connection is already active.
-    fn new_check() -> ConnectData {
+    fn new_check(id: String) -> ConnectData {
         let f = poll_fn(move || {
             blocking(|| {
                 Command::new("ssh").args(&[
                                          "-O",
                                          "check",
                                          "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
+                                         &format!("/tmp/rssh-session-{}", id),
+                                         "_",
                 ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
@@ -54,7 +57,7 @@ impl ConnectData {
     }
 
     /// Create a new half of a future that establishes a new connection.
-    fn new_connect() -> ConnectData {
+    fn new_connect(settings: SshConnectionSettings) -> ConnectData {
         let f = poll_fn(move || {
             blocking(|| {
                 Command::new("ssh").args(&[
@@ -64,7 +67,7 @@ impl ConnectData {
                                          "0:localhost:22",
                                          "-M",
                                          "-S",
-                                         "/tmp/rssh-session-1",
+                                         &format!("/tmp/rssh-session-{}", settings.id),
                                          "bjb3@127.0.0.1",
                 ])
                     .stdin(Stdio::null())
@@ -89,7 +92,7 @@ impl Future for Connect {
             let val = ::std::mem::replace(&mut self.data, ConnectData::None);
             match val {
                 ConnectData::None => {
-                    self.data = ConnectData::new_check();
+                    self.data = ConnectData::new_check(self.settings.id.clone());
                 },
                 ConnectData::CheckFuture(mut future) => {
                     match future.poll()? {
@@ -102,7 +105,7 @@ impl Future for Connect {
 
                             // If the check returned false, we're not already connected. Well,
                             // might as well get on connecting, then.
-                            self.data = ConnectData::new_connect();
+                            self.data = ConnectData::new_connect(self.settings.clone());
                         },
                         Async::NotReady => {
                             self.data = ConnectData::CheckFuture(future);

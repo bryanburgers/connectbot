@@ -12,7 +12,7 @@ pub struct SshForward {
     pub gateway_port: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshForwardServerState {
     // TODO: Active until...
     /// The server is actively attempting to keep the device connected

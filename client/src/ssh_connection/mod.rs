@@ -16,6 +16,11 @@ use self::connect::Connect;
 mod disconnect;
 use self::disconnect::Disconnect;
 
+#[derive(Debug, Clone)]
+pub struct SshConnectionSettings {
+    pub id: String,
+}
+
 /// A stream that handles a "persistent" SSH connection.
 ///
 /// This stream will attempt to continually keep an SSH connection open. If the connection is not
@@ -26,6 +31,8 @@ use self::disconnect::Disconnect;
 /// point it will attempt to disconnect the existing connection if necessary, and then end the
 /// stream.
 pub struct SshConnection {
+    /// Information about where to connect to
+    connection_settings: SshConnectionSettings,
     /// Whether a disconnect has been requested.
     disconnect: Arc<AtomicBool>,
     /// The number of consecutive failures, used for backoff
@@ -36,8 +43,9 @@ pub struct SshConnection {
 
 impl SshConnection {
     /// Create a new SSH connection object
-    pub fn new() -> SshConnection {
+    pub fn new(settings: SshConnectionSettings) -> SshConnection {
         SshConnection {
+            connection_settings: settings,
             disconnect: Arc::new(AtomicBool::new(false)),
             failures: 0,
             state: SshConnectionStateMachine::Requested,
@@ -127,7 +135,7 @@ impl Stream for SshConnection {
 
             match (disconnecting, state) {
                 (false, Requested) => {
-                    self.state = Connecting(Connect::new());
+                    self.state = Connecting(Connect::new(self.connection_settings.clone()));
                     return Ok(Async::Ready(Some(SshConnectionChange::Connecting)))
                 },
                 (false, Connecting(mut delay)) => {
@@ -155,7 +163,7 @@ impl Stream for SshConnection {
                 (false, Connected(mut delay)) => {
                     match delay.poll().map_err(|_| ())? {
                         Async::Ready(_) => {
-                            self.state = Checking(Check::new());
+                            self.state = Checking(Check::new(self.connection_settings.id.clone()));
                         },
                         Async::NotReady => {
                             self.state = Connected(delay);
@@ -187,7 +195,7 @@ impl Stream for SshConnection {
                 (false, Failed(mut delay)) => {
                     match delay.poll().map_err(|_| ())? {
                         Async::Ready(_) => {
-                            self.state = Connecting(Connect::new());
+                            self.state = Connecting(Connect::new(self.connection_settings.clone()));
                             return Ok(Async::Ready(Some(SshConnectionChange::Connecting)));
                         },
                         Async::NotReady => {
@@ -212,7 +220,7 @@ impl Stream for SshConnection {
                     return Ok(Async::Ready(None));
                 }
                 (true, _) => {
-                    self.state = Disconnecting(Disconnect::new());
+                    self.state = Disconnecting(Disconnect::new(self.connection_settings.id.clone()));
                     return Ok(Async::Ready(Some(SshConnectionChange::Disconnecting)));
                 },
             }

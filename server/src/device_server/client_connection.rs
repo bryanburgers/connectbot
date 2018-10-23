@@ -192,7 +192,10 @@ impl ClientConnection {
             let forwards: Vec<world::SshForward> = {
                 let world = self.world.read().unwrap();
                 let device = world.devices.get(&device_id).unwrap();
-                device.ssh_forwards.iter().map(|forward| forward.clone()).collect()
+                device.ssh_forwards.iter()
+                    .filter(|forward| forward.server_state == world::SshForwardServerState::Active)
+                    .map(|forward| forward.clone())
+                    .collect()
             };
 
             let future = {

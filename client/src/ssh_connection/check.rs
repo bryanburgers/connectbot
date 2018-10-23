@@ -14,15 +14,15 @@ pub struct Check {
 }
 
 impl Check {
-    pub fn new() -> Check {
+    pub fn new(id: String) -> Check {
         let f = poll_fn(move || {
             blocking(|| {
                 Command::new("ssh").args(&[
                                          "-O",
                                          "check",
                                          "-S",
-                                         "/tmp/rssh-session-1",
-                                         "bjb3@127.0.0.1",
+                                         &format!("/tmp/rssh-session-{}", id),
+                                         "_",
                 ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())

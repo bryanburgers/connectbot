@@ -187,9 +187,7 @@ impl Server {
 
                     let mut backchannel_future = None;
 
-                    println!("disable!");
                     if let Some(device) = device {
-                        println!("{:?}", device);
                         let connection_id = disable.get_connection_id();
 
                         device.ssh_forwards.disconnect(connection_id);
