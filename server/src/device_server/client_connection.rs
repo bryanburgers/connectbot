@@ -139,6 +139,21 @@ impl ClientConnection {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ssh connect: {}", e)))
     }
 
+    fn sender_send_disconnect_ssh(tx: Sender<device::ServerMessage>, connection_id: &str) -> impl Future<Item=(), Error=std::io::Error> + Send {
+        let disable = device::SshConnection_Disable::new();
+
+        let mut ssh_connection = device::SshConnection::new();
+        ssh_connection.set_id(connection_id.into());
+        ssh_connection.set_disable(disable);
+
+        let mut message = device::ServerMessage::new();
+        message.set_ssh_connection(ssh_connection);
+
+        tx.clone().send(message)
+            .map(|_| ())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ssh disconnect: {}", e)))
+    }
+
     fn on_client_message(mut self, mut message: device::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
             println!("↑ {:4}: {:?}", &self.id, message);
@@ -189,6 +204,54 @@ impl ClientConnection {
             let future = future.map(|_| self);
 
             return Box::new(future);
+        }
+
+        // After this point, we want to assume that any message we receive is from an authorized
+        // client. If it's not, well...
+        if self.device_id.is_none() {
+            println!("Ignoring message from non-initialized client");
+            return Box::new(futures::future::ok(self));
+        }
+
+        let device_id = self.device_id.as_ref().unwrap().clone();
+
+        if message.has_ssh_status() {
+            let ssh_status = message.take_ssh_status();
+            let connection_id = ssh_status.get_id();
+            let state = ssh_status.get_state();
+
+            let future = {
+                let mut world = self.world.write().unwrap();
+                let device = world.devices.get_mut(&device_id).unwrap();
+                let new_state = match state {
+                    device::SshConnectionStatus_State::UNKNOWN_STATE => world::SshForwardClientState::Requested,
+                    device::SshConnectionStatus_State::REQUESTED => world::SshForwardClientState::Requested,
+                    device::SshConnectionStatus_State::CONNECTING => world::SshForwardClientState::Connecting,
+                    device::SshConnectionStatus_State::CONNECTED => world::SshForwardClientState::Connected,
+                    device::SshConnectionStatus_State::DISCONNECTING => world::SshForwardClientState::Disconnecting,
+                    device::SshConnectionStatus_State::DISCONNECTED => world::SshForwardClientState::Disconnected,
+                    device::SshConnectionStatus_State::FAILED => world::SshForwardClientState::Failed,
+                };
+                match device.ssh_forwards.update_client_state(&connection_id, new_state) {
+                    Ok(()) => {
+                        None
+                    },
+                    Err(()) => {
+                        // We don't know about this SSH connection. We should tell the client to
+                        // terminate it.
+
+                        let future = Self::sender_send_disconnect_ssh(self.tx.clone(), connection_id);
+                        Some(future)
+                    }
+                }
+            };
+
+            if let Some(future) = future {
+                return Box::new(future.map(|_| self));
+            }
+            else {
+                return Box::new(futures::future::ok(self));
+            }
         }
 
         /*
@@ -263,10 +326,22 @@ impl ClientConnection {
                     Box::new(futures::future::ok(self))
                 }
             },
-            _ => {
-                // TODO: Connect/disconnect
-                Box::new(futures::future::ok(self))
-            }
+            BackchannelMessage::SshDisconnect(id) => {
+                let forward = {
+                    let world = self.world.read().unwrap();
+                    let device = world.devices.get(&self.device_id.clone().expect("An ID should exist at this point")).unwrap();
+                    device.ssh_forwards.find(&id).map(|forward| forward.clone())
+                };
+                if let Some(forward) = forward {
+                    let future = Self::sender_send_disconnect_ssh(self.tx.clone(), &forward.id);
+                    let f = future
+                        .map(|_| self);
+                    Box::new(f)
+                }
+                else {
+                    Box::new(futures::future::ok(self))
+                }
+            },
         }
     }
 

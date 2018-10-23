@@ -185,10 +185,19 @@ impl Server {
 
                     let mut ssh_connection_response = control::SshConnectionResponse::new();
 
+                    let mut backchannel_future = None;
+
+                    println!("disable!");
                     if let Some(device) = device {
+                        println!("{:?}", device);
                         let connection_id = disable.get_connection_id();
 
                         device.ssh_forwards.disconnect(connection_id);
+
+                        if let Some(ref handle) = device.active_connection {
+                            backchannel_future = Some(handle.disconnect_ssh(&connection_id.clone()));
+                        }
+
                         ssh_connection_response.set_status(control::SshConnectionResponse_Status::SUCCESS);
                     }
                     else {
@@ -199,11 +208,27 @@ impl Server {
                     response.set_ssh_connection_response(ssh_connection_response);
                     response.set_in_response_to(message.get_message_id());
 
-                    let f = tx.clone().send(response)
-                        .map(|_| ())
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+                    return match backchannel_future {
+                        Some(future) => {
+                            let tx = tx.clone();
+                            let f = future
+                                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to send backchannel message"))
+                                .and_then(move |_| {
+                                    tx.clone().send(response)
+                                        .map(|_| ())
+                                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)))
+                                });
 
-                    return Box::new(f);
+                            Box::new(f)
+                        },
+                        None => {
+                            let f = tx.clone().send(response)
+                                .map(|_| ())
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                            Box::new(f)
+                        }
+                    }
                 }
             }
 

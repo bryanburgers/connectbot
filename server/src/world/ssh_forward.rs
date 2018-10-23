@@ -81,6 +81,24 @@ impl SshForwards {
         &self.0[self.0.len() - 1]
     }
 
+    /// Update the current state of a client. Returns Ok(()) if the client was found, and Err(())
+    /// if the client was not found.
+    pub fn update_client_state(&mut self, id: &str, client_state: SshForwardClientState) -> Result<(), ()> {
+        let mut success = false;
+        for item in self.0.iter_mut() {
+            if item.id == id {
+                item.client_state = client_state;
+                success = true;
+                break;
+            }
+        }
+
+        match success {
+            true => Ok(()),
+            false => Err(()),
+        }
+    }
+
     pub fn disconnect(&mut self, id: &str) -> bool {
         let mut success = false;
         for item in self.0.iter_mut() {
