@@ -41,7 +41,7 @@ impl ConnectData {
                                          "-O",
                                          "check",
                                          "-S",
-                                         &format!("/tmp/rssh-session-{}", id),
+                                         &format!("/tmp/connectbot-ssh-{}", id),
                                          "_",
                 ])
                     .stdin(Stdio::null())
@@ -59,15 +59,26 @@ impl ConnectData {
     /// Create a new half of a future that establishes a new connection.
     fn new_connect(settings: SshConnectionSettings) -> ConnectData {
         let f = poll_fn(move || {
+            let connection = format!("{}{}:{}:{}",
+                                     match settings.gateway_port {
+                                         true => ":",
+                                         false => "",
+                                     },
+                                     settings.remote_port,
+                                     settings.forward_host,
+                                     settings.forward_port);
             blocking(|| {
                 Command::new("ssh").args(&[
                                          "-f",
                                          "-N",
                                          "-R",
-                                         "0:localhost:22",
+                                         &connection,
+                                         "-o", "BatchMode=yes",
+                                         "-o", "StrictHostKeyChecking=no",
+                                         "-o", "UserKnownHostsFile=/dev/null",
                                          "-M",
                                          "-S",
-                                         &format!("/tmp/rssh-session-{}", settings.id),
+                                         &format!("/tmp/connectbot-ssh-{}", settings.id),
                                          "-p",
                                          &format!("{}", settings.port),
                                          &format!("{}@{}", settings.username, settings.host),

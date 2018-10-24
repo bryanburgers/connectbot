@@ -22,6 +22,10 @@ pub struct SshConnectionSettings {
     pub host: String,
     pub username: String,
     pub port: u16,
+    pub forward_host: String,
+    pub forward_port: u16,
+    pub remote_port: u16,
+    pub gateway_port: bool,
 }
 
 /// A stream that handles a "persistent" SSH connection.

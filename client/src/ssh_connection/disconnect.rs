@@ -19,7 +19,7 @@ impl Disconnect {
                                          "-O",
                                          "exit",
                                          "-S",
-                                         &format!("/tmp/rssh-session-{}", id),
+                                         &format!("/tmp/connectbot-ssh-{}", id),
                                          "_",
                 ])
                     .stdin(Stdio::null())

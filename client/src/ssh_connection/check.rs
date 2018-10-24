@@ -21,7 +21,7 @@ impl Check {
                                          "-O",
                                          "check",
                                          "-S",
-                                         &format!("/tmp/rssh-session-{}", id),
+                                         &format!("/tmp/connectbot-ssh-{}", id),
                                          "_",
                 ])
                     .stdin(Stdio::null())

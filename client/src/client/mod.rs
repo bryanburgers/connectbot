@@ -100,6 +100,10 @@ impl Client {
                 host: enable.get_ssh_host().to_string(),
                 port: enable.get_ssh_port() as u16,
                 username: enable.get_ssh_username().to_string(),
+                forward_host: enable.get_forward_host().to_string(),
+                forward_port: enable.get_forward_port() as u16,
+                remote_port: enable.get_remote_port() as u16,
+                gateway_port: enable.get_gateway_port(),
             };
             let future = SshConnection::new(settings);
             manager_ref.register_handle(&id.clone(), future.handle());
