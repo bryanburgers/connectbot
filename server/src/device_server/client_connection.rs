@@ -116,7 +116,7 @@ impl ClientConnection {
         }
     }
 
-    fn sender_send_connect_ssh(tx: Sender<device::ServerMessage>, ssh_forward: world::SshForward, config: SharedConfig) -> impl Future<Item=(), Error=std::io::Error> + Send {
+    fn sender_send_connect_ssh(tx: Sender<device::ServerMessage>, ssh_forward: world::SshForwardData, config: SharedConfig) -> impl Future<Item=(), Error=std::io::Error> + Send {
         let mut enable = device::SshConnection_Enable::new();
 
         enable.set_ssh_host(config.ssh.host.as_ref().map(String::as_str).unwrap_or("localhost").into());
@@ -132,7 +132,7 @@ impl ClientConnection {
         enable.set_gateway_port(ssh_forward.gateway_port);
 
         let mut ssh_connection = device::SshConnection::new();
-        ssh_connection.set_id(ssh_forward.id.into());
+        ssh_connection.set_id(ssh_forward.id.clone().into());
         ssh_connection.set_enable(enable);
 
         let mut message = device::ServerMessage::new();
@@ -193,12 +193,12 @@ impl ClientConnection {
                 tokio::spawn(previous_connection.disconnect());
             }
 
-            let forwards: Vec<world::SshForward> = {
+            let forwards: Vec<world::SshForwardData> = {
                 let world = self.world.read().unwrap();
                 let device = world.devices.get(&device_id).unwrap();
                 device.ssh_forwards.iter()
                     .filter(|forward| forward.server_state == world::SshForwardServerState::Active)
-                    .map(|forward| forward.clone())
+                    .map(|forward| forward.data())
                     .collect()
             };
 
@@ -322,7 +322,7 @@ impl ClientConnection {
                 let forward = {
                     let world = self.world.read().unwrap();
                     let device = world.devices.get(&self.device_id.clone().expect("An ID should exist at this point")).unwrap();
-                    device.ssh_forwards.find(&id).map(|forward| forward.clone())
+                    device.ssh_forwards.find(&id).map(|forward| forward.data())
                 };
                 if let Some(forward) = forward {
                     let future = Self::sender_send_connect_ssh(self.tx.clone(), forward, self.config.clone());
@@ -338,7 +338,7 @@ impl ClientConnection {
                 let forward = {
                     let world = self.world.read().unwrap();
                     let device = world.devices.get(&self.device_id.clone().expect("An ID should exist at this point")).unwrap();
-                    device.ssh_forwards.find(&id).map(|forward| forward.clone())
+                    device.ssh_forwards.find(&id).map(|forward| forward.data())
                 };
                 if let Some(forward) = forward {
                     let future = Self::sender_send_disconnect_ssh(self.tx.clone(), &forward.id);

@@ -91,9 +91,9 @@ fn main() {
         config.ssh.private_key_data = Some(data);
     }
 
-    let world = world::World::shared();
-    let control_server = control_server::Server::new(world.clone());
     let config = Arc::new(config);
+    let world = world::World::shared(config.clone());
+    let control_server = control_server::Server::new(world.clone());
     let device_server = device_server::Server::new(world.clone(), config.clone());
 
     let device_server_future = {

@@ -71,7 +71,7 @@ impl Server {
                             });
                             connection.set_forward_host(forward.forward_host.clone().into());
                             connection.set_forward_port(forward.forward_port as u32);
-                            connection.set_remote_port(forward.remote_port as u32);
+                            connection.set_remote_port(forward.remote_port.as_ref().map_or(0, |item| item.value() as u32));
                             connection.set_gateway_port(forward.gateway_port);
                             connections.push(connection);
                         }
@@ -134,12 +134,11 @@ impl Server {
                         // TODO: Make sure this is non-zero u16
                         let forward_port = enable.get_forward_port();
                         let gateway_port = enable.get_gateway_port();
-                        let remote_port = 0;
-                        let forward = device.ssh_forwards.create(forward_host.into(), forward_port as u16, remote_port, gateway_port);
+                        let forward = device.ssh_forwards.create(forward_host.into(), forward_port as u16, gateway_port);
 
                         ssh_connection_response.set_status(control::SshConnectionResponse_Status::SUCCESS);
                         ssh_connection_response.set_connection_id(forward.id.clone().into());
-                        ssh_connection_response.set_remote_port(remote_port as u32);
+                        ssh_connection_response.set_remote_port(forward.remote_port.as_ref().map_or(0, |item| item.value() as u32));
 
                         if let Some(ref handle) = device.active_connection {
                             backchannel_future = Some(handle.connect_ssh(&forward.id.clone()));

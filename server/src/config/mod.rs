@@ -82,6 +82,10 @@ pub struct Ssh {
     pub port: Option<u16>,
     pub user: Option<String>,
     pub private_key: Option<String>,
+    pub port_start: u16,
+    pub port_end: u16,
+    pub web_port_start: u16,
+    pub web_port_end: u16,
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
     pub private_key_data: Option<String>,
@@ -95,6 +99,10 @@ impl Default for Ssh {
             user: Some("reversessh".into()),
             private_key: Some("/home/reversessh/.ssh/id_rsa".into()),
             private_key_data: None,
+            port_start: 10000,
+            port_end: 10999,
+            web_port_start: 7000,
+            web_port_end: 7016,
         }
     }
 }

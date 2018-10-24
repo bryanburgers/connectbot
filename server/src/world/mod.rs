@@ -11,7 +11,10 @@ use std;
 mod connection_history;
 pub use self::connection_history::{ConnectionHistory, ConnectionHistoryItem};
 mod ssh_forward;
-pub use self::ssh_forward::{SshForwards, SshForward, SshForwardClientState, SshForwardServerState};
+pub use self::ssh_forward::{SshForwards, SshForward, SshForwardData, SshForwardClientState, SshForwardServerState};
+mod port_allocator;
+pub use self::port_allocator::RemotePort;
+use self::port_allocator::{PortAllocator, PortAllocatorSettings};
 
 pub type SharedWorld = Arc<RwLock<World>>;
 
@@ -20,19 +23,26 @@ pub type SharedWorld = Arc<RwLock<World>>;
 pub struct World {
     /// Map from device ID to the device
     pub devices: HashMap<String, Device>,
+    port_allocator: PortAllocator,
 }
 
 impl World {
     /// Create a new world
-    pub fn new() -> World {
+    pub fn new(config: super::config::SharedConfig) -> World {
         World {
             devices: HashMap::new(),
+            port_allocator: PortAllocator::new(PortAllocatorSettings {
+                web_start: config.ssh.web_port_start,
+                web_end: config.ssh.web_port_end,
+                other_start: config.ssh.port_start,
+                other_end: config.ssh.port_end,
+            }),
         }
     }
 
     /// Create a new world, wrapped in a shared lock
-    pub fn shared() -> SharedWorld {
-        Arc::new(RwLock::new(World::new()))
+    pub fn shared(config: super::config::SharedConfig) -> SharedWorld {
+        Arc::new(RwLock::new(World::new(config)))
     }
 
     /// Cleanup any old data that is no longer necessary
@@ -55,7 +65,7 @@ impl World {
         match entry {
             std::collections::hash_map::Entry::Occupied(_) => Err(()),
             std::collections::hash_map::Entry::Vacant(v) => {
-                v.insert(Device::new(id));
+                v.insert(Device::new(id, self.port_allocator.clone()));
                 Ok(())
             }
         }
@@ -67,9 +77,10 @@ impl World {
     /// disconnect the previous connection handle, if necessary.)
     pub fn connect_device(&mut self, id: &str, handle: ClientConnectionHandle, address: &SocketAddr, connected_at: DateTime<Utc>) -> Option<ClientConnectionHandle> {
         let connection_id = handle.get_id();
+        let port_allocator = self.port_allocator.clone();
         let device = self.devices.entry(id.to_string())
             .or_insert_with(|| {
-                Device::new(id)
+                Device::new(id, port_allocator)
             });
 
         device.connection_status = ConnectionStatus::Connected { address: address.ip() };
@@ -124,12 +135,12 @@ pub struct Device {
 }
 
 impl Device {
-    fn new(id: &str) -> Device {
+    fn new(id: &str, allocator: PortAllocator) -> Device {
         Device {
             id: id.to_owned(),
             name: id.to_owned(),
             connection_status: ConnectionStatus::Unknown,
-            ssh_forwards: SshForwards::new(),
+            ssh_forwards: SshForwards::new(allocator),
             active_connection: None,
             connection_history: ConnectionHistory::new(),
         }
