@@ -104,6 +104,7 @@ impl Client {
                 forward_port: enable.get_forward_port() as u16,
                 remote_port: enable.get_remote_port() as u16,
                 gateway_port: enable.get_gateway_port(),
+                private_key: enable.get_ssh_key().to_string(),
             };
             let future = SshConnection::new(settings);
             manager_ref.register_handle(&id.clone(), future.handle());

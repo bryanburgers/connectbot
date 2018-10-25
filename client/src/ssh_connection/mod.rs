@@ -26,6 +26,13 @@ pub struct SshConnectionSettings {
     pub forward_port: u16,
     pub remote_port: u16,
     pub gateway_port: bool,
+    pub private_key: String,
+}
+
+impl SshConnectionSettings {
+    pub fn private_key_file(&self) -> String {
+        format!("/tmp/connectbot-sshkey-{}", self.id)
+    }
 }
 
 /// A stream that handles a "persistent" SSH connection.
