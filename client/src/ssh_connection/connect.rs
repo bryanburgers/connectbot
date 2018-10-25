@@ -180,7 +180,7 @@ impl Future for Connect {
 
 impl Drop for Connect {
     fn drop(&mut self) {
-        std::fs::remove_file(self.settings.private_key_file());
+        let _ = std::fs::remove_file(self.settings.private_key_file());
     }
 }
 
