@@ -44,7 +44,10 @@ impl Server {
         let future = listener.incoming()
             .map_err(|err| println!("Incoming error: {}", err))
             .fold(self, move |mut server, connection| {
-                let addr = connection.peer_addr().unwrap();
+                let addr = connection.peer_addr().unwrap_or_else(|err| {
+                    println!("Failed to get peer address: {}", err);
+                    "[::]:0".parse().unwrap()
+                });
                 // let server = server.clone();
                 arc_config.accept_async(connection)
                     .then(move |stream| {
