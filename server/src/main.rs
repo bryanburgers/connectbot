@@ -66,7 +66,7 @@ fn main() {
              .long("config")
              .help("The location of the config file")
              .takes_value(true)
-             .default_value("/etc/connectbot/server.config"))
+             .default_value("/etc/connectbot/server.conf"))
         .get_matches();
 
     if let Some(_matches) = matches.subcommand_matches("config") {

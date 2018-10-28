@@ -162,7 +162,7 @@ pub fn main() {
              .long("config")
              .help("The location of the config file")
              .takes_value(true)
-             .default_value("/etc/connectbot/web.config"))
+             .default_value("/etc/connectbot/web.conf"))
         .get_matches();
 
     if let Some(_matches) = matches.subcommand_matches("config") {
