@@ -171,7 +171,10 @@ pub fn main() {
         return;
     }
 
-    let result = config::ApplicationConfig::from_file(Path::new(matches.value_of_os("config").unwrap()));
+    let config_file = Path::new(matches.value_of_os("config").unwrap());
+    let config_base = config_file.parent().unwrap();
+
+    let result = config::ApplicationConfig::from_file(config_file);
     let config = match result {
         Ok(config) => config,
         Err(string) => {
@@ -184,6 +187,9 @@ pub fn main() {
     let control_address = &config.control_address;
 
     println!("Listening on http://{}", address);
+
+    let assets_path = config_base.join(config.assets.path);
+    let templates_path = config_base.join(config.templates.path);
 
     ServiceBuilder::new()
         .resource(ConnectBotWeb::new(control_address))

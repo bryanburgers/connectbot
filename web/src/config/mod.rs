@@ -8,6 +8,8 @@ use toml;
 pub struct ApplicationConfig {
     pub address: String,
     pub control_address: String,
+    pub assets: Assets,
+    pub templates: Templates,
 }
 
 impl Default for ApplicationConfig {
@@ -15,6 +17,8 @@ impl Default for ApplicationConfig {
         ApplicationConfig {
             address: "[::]:8080".to_string(),
             control_address: "[::1]:12345".to_string(),
+            assets: Default::default(),
+            templates: Default::default(),
         }
     }
 }
@@ -33,5 +37,31 @@ impl ApplicationConfig {
             .map_err(|err| format!("Failed to parse {:?}: {}", config_file, err))?;
 
         Ok(config)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Assets {
+    pub path: String,
+}
+
+impl Default for Assets {
+    fn default() -> Self {
+        Assets {
+            path: "/var/apps/connectbot/assets".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Templates {
+    pub path: String,
+}
+
+impl Default for Templates {
+    fn default() -> Self {
+        Templates {
+            path: "/var/apps/connectbot/templates".to_string(),
+        }
     }
 }
