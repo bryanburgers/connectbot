@@ -1,22 +1,25 @@
+extern crate chrono;
 extern crate clap;
 extern crate connectbot_shared;
-#[macro_use]
+extern crate futures;
 extern crate serde_derive;
 extern crate tokio;
-extern crate futures;
+extern crate toml;
 #[macro_use]
 extern crate tower_web;
-extern crate chrono;
 
 use chrono::{TimeZone, Utc};
-use clap::{Arg, App};
+use clap::{Arg, App, AppSettings, SubCommand};
 use connectbot_shared::client::Client;
 use connectbot_shared::protos::control;
 // use connectbot_shared::state::{self, Pattern};
+use std::path::Path;
 use std::sync::Arc;
 use tower_web::ServiceBuilder;
 use tower_web::view::Handlebars;
 use tokio::prelude::*;
+
+mod config;
 
 /// This type will be part of the web service as a resource.
 #[derive(Clone, Debug)]
@@ -151,27 +154,40 @@ pub fn main() {
     let matches = App::new("connectbot-web")
         .version("1.0")
         .author("Bryan Burgers <bryan@burgers.io>")
-        .arg(Arg::with_name("address")
-             .short("a")
-             .long("address")
-             .help("The address to use to communicate with the connectbot server")
+        .setting(AppSettings::SubcommandsNegateReqs)
+        .subcommand(SubCommand::with_name("config")
+                    .about("Generate an example config file"))
+        .arg(Arg::with_name("config")
+             .short("c")
+             .long("config")
+             .help("The location of the config file")
              .takes_value(true)
-             .default_value("[::1]:12345"))
-        .arg(Arg::with_name("listen")
-             .short("l")
-             .long("listen")
-             .help("The address for the website to listen on")
-             .takes_value(true)
-             .default_value("[::]:8080"))
+             .default_value("/etc/connectbot/web.config"))
         .get_matches();
 
-    let listen = matches.value_of("listen").unwrap().parse().expect("Invalid address");
-    println!("Listening on http://{}", listen);
-    let daemon_address = matches.value_of("address").unwrap();
+    if let Some(_matches) = matches.subcommand_matches("config") {
+        let config: config::ApplicationConfig = std::default::Default::default();
+        print!("{}", toml::to_string(&config).unwrap());
+        return;
+    }
+
+    let result = config::ApplicationConfig::from_file(Path::new(matches.value_of_os("config").unwrap()));
+    let config = match result {
+        Ok(config) => config,
+        Err(string) => {
+            println!("{}", string);
+            std::process::exit(1);
+        }
+    };
+
+    let address = (&config.address).parse().expect("address must be a valid socket address");
+    let control_address = &config.control_address;
+
+    println!("Listening on http://{}", address);
 
     ServiceBuilder::new()
-        .resource(ConnectBotWeb::new(daemon_address))
+        .resource(ConnectBotWeb::new(control_address))
         .serializer(Handlebars::new())
-        .run(&listen)
+        .run(&address)
         .unwrap();
 }
