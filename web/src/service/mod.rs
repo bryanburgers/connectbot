@@ -33,6 +33,11 @@ struct IndexResponse {
     test: &'static str,
 }
 
+#[derive(Debug, Response)]
+struct DeviceResponse {
+    device: Device,
+}
+
 #[derive(Response, Debug)]
 struct DevicesResponse {
     devices: Vec<Device>,
@@ -121,15 +126,32 @@ impl_web! {
     impl ConnectBotWeb {
         #[get("/")]
         #[content_type("html")]
-        // #[web(template = "index")]
-        fn index(&self) -> Result<&'static str, ()> {
-            Ok(include_str!("../../templates/index.hbs"))
-            /*
+        #[web(template = "index")]
+        fn index(&self) -> Result<IndexResponse, ()> {
             let resp = IndexResponse {
                 test: "test",
             };
             Ok(resp)
-            */
+        }
+
+        #[get("/d/:device_id")]
+        #[content_type("html")]
+        #[web(template = "device")]
+        fn device(&self, device_id: String) -> impl Future<Item=DeviceResponse, Error=std::io::Error> + Send {
+            self.client.get_clients().and_then(move |devices| {
+                let devices_response: DevicesResponse = devices.into();
+                let devices = devices_response.devices;
+                let maybe_device = devices.into_iter().filter(|d| d.id == device_id).nth(0);
+
+                if let Some(device) = maybe_device {
+                    Ok(DeviceResponse {
+                        device: device,
+                    })
+                }
+                else {
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, "Device not found".to_string()))
+                }
+            })
         }
 
         #[get("/devices")]

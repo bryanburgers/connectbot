@@ -2,6 +2,7 @@ extern crate chrono;
 extern crate clap;
 extern crate connectbot_shared;
 extern crate futures;
+extern crate handlebars;
 extern crate serde_derive;
 extern crate tokio;
 extern crate toml;
@@ -54,11 +55,14 @@ pub fn main() {
     println!("Listening on http://{}", address);
 
     let _assets_path = config_base.join(config.assets.path);
-    let _templates_path = config_base.join(config.templates.path);
+    let templates_path = config_base.join(config.templates.path);
+
+    let mut handlebars_registry = handlebars::Handlebars::new();
+    handlebars_registry.register_templates_directory(".hbs", templates_path).expect("templates path must exist");
 
     ServiceBuilder::new()
         .resource(service::ConnectBotWeb::new(control_address))
-        .serializer(Handlebars::new())
+        .serializer(Handlebars::new_with_registry(handlebars_registry))
         .run(&address)
         .unwrap();
 }

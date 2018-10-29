@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+    {{#if title}}
+        <title>{{ title }} &ndash; Connectbot</title>
+    {{else}}
+        <title>Connectbot</title>
+    {{/if}}
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Roboto+Mono" rel="stylesheet">
+    <style>
+        html, body, * {
+            box-sizing: border-box;
+            font-family: 'Open Sans', sans-serif;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            padding: 1em;
+        }
+
+        .device {
+        }
+        .device + .device {
+            margin-top: 1em;
+        }
+        .device header {
+            margin-bottom: 0.2em;
+        }
+        .device h2 {
+            color: #333;
+            display: inline;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 0;
+        }
+        .device h2 a {
+            color: #333;
+            text-decoration: none;
+        }
+        .device h2 a:hover {
+            color: #000;
+        }
+        .device h3 {
+            /* display: inline; */
+            display: none;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.8em;
+            color: #999;
+            font-weight: normal;
+            margin: 0;
+        }
+        .device .address {
+            font-family: 'Roboto Mono', monospace;
+            color: #666;
+            display: none;
+        }
+        .device .address[data-visible="visible"] {
+            display: inline;
+        }
+        .device .address[data-state="inactive"] {
+            color: #bbb;
+        }
+
+        .device .history {
+            background: #ccc;
+            background: repeating-linear-gradient(235deg, #eee, #eee 10px, #ddd 10px, #ddd 20px, #eee 20px);
+            background: linear-gradient(180deg, rgba(210, 210, 210, 0.3), rgba(210, 210, 210, 0) 50%, rgba(210, 210, 210, 0.8) 100%),
+                        repeating-linear-gradient(235deg, #eee, #eee 10px, #ddd 10px, #ddd 20px, #eee 20px);
+            border-radius: 2px;
+            width: 100%;
+            height: 1em;
+            position: relative;
+            overflow: hidden;
+        }
+        .device .history .history-item {
+            border-radius: 2px;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: #17c017;
+            background: linear-gradient(180deg, #17c017, #19d119 50%, #109c10 100%);
+            border: 1px solid #11a211;
+            display: block;
+        }
+
+        .durations {
+            font-size: 0.6em;
+            text-align: right;
+            margin-top: 3em;
+        }
+        .durations button {
+            border: none;
+            background: none;
+            display: inline;
+            cursor: pointer;
+            color: #4488ff;
+            font-size: inherit;
+            font-family: inherit;
+            margin: 0;
+            padding: 0;
+        }
+        .durations button[data-selected=selected] {
+            cursor: default;
+            color: inherit;
+        }
+    </style>
+</head>
+<body>
+    {{> body }}
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.22.2/moment.min.js"></script>
+    {{#> scripts }}
+    {{/scripts }}
+</body>
+</html>
