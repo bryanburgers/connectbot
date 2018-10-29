@@ -3,6 +3,7 @@ use std::path::Path;
 use std::fs::File;
 use std::io::Read;
 use toml;
+use tower_web::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ApplicationConfig {
