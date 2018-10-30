@@ -211,7 +211,6 @@ impl_web! {
 
         #[post("/d/:device_id/connections/:connection_id/delete")]
         fn delete_connections(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
-            println!("{}: {}", device_id, connection_id);
             self.client.disconnect_connection(&device_id, &connection_id).and_then(move |_| {
                 let response = http::Response::builder()
                     .header("location", format!("/d/{}", device_id))
