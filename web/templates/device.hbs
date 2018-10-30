@@ -1,5 +1,23 @@
 {{#> layout title=device.name}}
     {{#*inline "body"}}
-    <h1>{{ device.name }} ({{ device.name }})</h1>
+    <h1>{{ device.name }} ({{ device.id }})</h1>
+
+    <form action="/d/{{device.id}}/connections" method="POST">
+        <input type="hidden" name="host" value="localhost">
+        <input type="text" name="port" value="80">
+        <button>Submit</button>
+    </form>
+
+    <h2>Connections</h2>
+    <ul>
+        {{#each device.connections as |connection|}}
+        <li>
+            {{ connection.forward_host }}:{{ connection.forward_port }} -> {{ connection.remote_port }}
+            <form action="/d/{{../device.id}}/connections/{{connection.id}}/delete" method="POST">
+                <button>Disconnect</button>
+            </form>
+        </li>
+        {{/each}}
+    </ul>
     {{/inline}}
 {{/layout}}

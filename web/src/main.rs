@@ -3,6 +3,7 @@ extern crate clap;
 extern crate connectbot_shared;
 extern crate futures;
 extern crate handlebars;
+extern crate http;
 extern crate serde_derive;
 extern crate tokio;
 extern crate toml;

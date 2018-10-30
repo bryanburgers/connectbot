@@ -1,10 +1,11 @@
 use chrono::{TimeZone, Utc};
 use connectbot_shared::client::Client;
 use connectbot_shared::protos::control;
+use http;
 // use connectbot_shared::state::{self, Pattern};
 use std::sync::Arc;
 use tokio::prelude::*;
-use tower_web::{Serialize, Response, impl_web};
+use tower_web::{Deserialize, Serialize, Extract, Response, impl_web};
 // These seem to be sub-macros that tower_web uses. Importing macros from crates is new as of Rust
 // 1.30.0, so I'm guessing tower_web will clean this up and these won't be needed in the future.
 use tower_web::{
@@ -58,6 +59,7 @@ struct Device {
     id: String,
     name: String,
     address: Option<String>,
+    connections: Vec<DeviceConnection>,
     connection_history: Vec<DeviceHistoryItem>,
 }
 
@@ -65,6 +67,11 @@ impl From<control::ClientsResponse_Client> for Device {
     fn from(mut client: control::ClientsResponse_Client) -> Self {
         let id = client.take_id().to_string();
         let connection_history = client.take_connection_history()
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        let connections = client.take_connections()
             .into_iter()
             .map(Into::into)
             .collect();
@@ -81,6 +88,7 @@ impl From<control::ClientsResponse_Client> for Device {
             name: id.clone(),
             id: id,
             address,
+            connections,
             connection_history,
         }
     }
@@ -122,6 +130,31 @@ impl From<control::ClientsResponse_ConnectionHistoryItem> for DeviceHistoryItem 
     }
 }
 
+#[derive(Serialize, Debug)]
+struct DeviceConnection {
+    id: String,
+    remote_port: u16,
+    forward_port: u16,
+    forward_host: String,
+}
+
+impl From<control::ClientsResponse_Connection> for DeviceConnection {
+    fn from(connection: control::ClientsResponse_Connection) -> Self {
+        DeviceConnection {
+            id: connection.get_id().to_string(),
+            forward_port: connection.get_forward_port() as u16,
+            forward_host: connection.get_forward_host().to_string(),
+            remote_port: connection.get_remote_port() as u16,
+        }
+    }
+}
+
+#[derive(Extract, Debug)]
+struct CreateConnection {
+    host: String,
+    port: u16,
+}
+
 impl_web! {
     impl ConnectBotWeb {
         #[get("/")]
@@ -160,6 +193,33 @@ impl_web! {
             self.client.get_clients().and_then(|devices| {
                 let devices = devices.into();
                 Ok(devices)
+            })
+        }
+
+        #[post("/d/:device_id/connections")]
+        fn post_connections(&self, device_id: String, body: CreateConnection) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
+            self.client.connect_device(&device_id, body.port).and_then(move |_| {
+                let response = http::Response::builder()
+                    .header("location", format!("/d/{}", device_id))
+                    .status(http::StatusCode::SEE_OTHER)
+                    .body("")
+                    .unwrap();
+
+                Ok(response)
+            })
+        }
+
+        #[post("/d/:device_id/connections/:connection_id/delete")]
+        fn delete_connections(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
+            println!("{}: {}", device_id, connection_id);
+            self.client.disconnect_connection(&device_id, &connection_id).and_then(move |_| {
+                let response = http::Response::builder()
+                    .header("location", format!("/d/{}", device_id))
+                    .status(http::StatusCode::SEE_OTHER)
+                    .body("")
+                    .unwrap();
+
+                Ok(response)
             })
         }
     }
