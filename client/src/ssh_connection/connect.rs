@@ -48,7 +48,7 @@ impl ConnectData {
                                          "check",
                                          "-S",
                                          &format!("/tmp/connectbot-ssh-{}", id),
-                                         "_",
+                                         "_@localhost",
                 ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())

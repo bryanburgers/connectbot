@@ -20,7 +20,7 @@ impl Disconnect {
                                          "exit",
                                          "-S",
                                          &format!("/tmp/connectbot-ssh-{}", id),
-                                         "_",
+                                         "_@localhost",
                 ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
