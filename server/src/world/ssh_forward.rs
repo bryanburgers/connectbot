@@ -155,6 +155,23 @@ impl SshForwards {
         success
     }
 
+    pub fn extend(&mut self, id: &str) -> bool {
+        let mut success = false;
+        let max = Utc::now() + Duration::days(7);
+        for item in self.forwards.iter_mut() {
+            if item.id == id {
+                if let SshForwardServerState::Active { until } = item.server_state {
+                    let new_until = until + Duration::days(1);
+                    let new_until = std::cmp::min(new_until, max);
+                    item.server_state = SshForwardServerState::Active { until: new_until };
+                    success = true;
+                }
+                break;
+            }
+        }
+        success
+    }
+
     pub fn cleanup(&mut self, now: DateTime<Utc>, cutoff: DateTime<Utc>, active_connection: Option<ClientConnectionHandle>) {
         for item in self.forwards.iter_mut() {
             match item.server_state {

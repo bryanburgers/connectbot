@@ -62,6 +62,20 @@ impl Client {
             .map(|mut response| response.take_ssh_connection_response())
     }
 
+    pub fn extend_connection(&self, device_id: &str, connection_id: &str) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
+        let mut message = protos::control::ClientMessage::new();
+        let mut ssh_connection = protos::control::SshConnection::new();
+        let mut extend = protos::control::SshConnection_ExtendTimeout::new();
+        extend.set_connection_id(connection_id.into());
+        ssh_connection.set_device_id(device_id.into());
+        ssh_connection.set_extend_timeout(extend);
+        message.set_message_id(1);
+        message.set_ssh_connection(ssh_connection);
+
+        RequestResponseFuture::new(&self.addr, message)
+            .map(|mut response| response.take_ssh_connection_response())
+    }
+
     pub fn create_device(&self, device_id: &str) -> impl Future<Item=protos::control::CreateDeviceResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut create_device = protos::control::CreateDevice::new();

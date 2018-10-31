@@ -51,6 +51,17 @@ fn main() {
                          .help("The connection ID of the SSH connection to disconnect")
                          .required(true)
                          .takes_value(true)))
+        .subcommand(SubCommand::with_name("extend")
+                    .about("Disconnect an SSH connection")
+                    .arg(Arg::with_name("device")
+                         .help("The id of the device to connect")
+                         .required(true)
+                         .takes_value(true))
+                    .arg(Arg::with_name("connection-id")
+                         .long("connection-id")
+                         .help("The connection ID of the SSH connection to extend")
+                         .required(true)
+                         .takes_value(true)))
         .subcommand(SubCommand::with_name("query")
                     .about("Dump information about devices connected to the server"))
         .subcommand(SubCommand::with_name("remove")
@@ -84,6 +95,7 @@ fn main() {
     match matches.subcommand() {
         ("connect", Some(matches)) => connect(client, matches),
         ("disconnect", Some(matches)) => disconnect(client, matches),
+        ("extend", Some(matches)) => extend(client, matches),
         ("query", Some(matches)) => query(client, matches),
         ("create", Some(matches)) => create(client, matches),
         ("remove", Some(matches)) => remove(client, matches),
@@ -108,6 +120,18 @@ fn disconnect(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let connection_id = matches.value_of("connection-id").unwrap();
     let future = client.disconnect_connection(device_id, connection_id)
+        .map(|response| {
+            println!("{:#?}", response);
+        })
+        .map_err(|e| println!("Error: {}", e));
+
+    tokio::run(future);
+}
+
+fn extend(client: CommsClient, matches: &clap::ArgMatches) {
+    let device_id = matches.value_of("device").unwrap();
+    let connection_id = matches.value_of("connection-id").unwrap();
+    let future = client.extend_connection(device_id, connection_id)
         .map(|response| {
             println!("{:#?}", response);
         })

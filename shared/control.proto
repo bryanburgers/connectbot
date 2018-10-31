@@ -67,6 +67,7 @@ message ClientsResponse {
     uint32 forward_port = 5;
     uint32 remote_port = 6;
     bool gateway_port = 7;
+    uint64 active_until = 8;
   }
 
   enum ConnectionHistoryType {
@@ -112,11 +113,17 @@ message SshConnection {
     string connection_id = 1;
   }
 
+  // Extend the timeout of an SSH connection.
+  message ExtendTimeout {
+    string connection_id = 1;
+  }
+
   // The ID of the device
   string device_id = 1;
   oneof msg {
     Enable enable = 2;
     Disable disable = 3;
+    ExtendTimeout extend_timeout = 4;
   }
 }
 

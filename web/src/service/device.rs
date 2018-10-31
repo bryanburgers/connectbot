@@ -87,6 +87,7 @@ pub struct DeviceConnection {
     pub remote_port: u16,
     pub forward_port: u16,
     pub forward_host: String,
+    pub active_until: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -109,6 +110,13 @@ pub enum DeviceConnectionActiveState {
 
 impl From<control::ClientsResponse_Connection> for DeviceConnection {
     fn from(connection: control::ClientsResponse_Connection) -> Self {
+        let active_until = if connection.get_active_until() == 0 {
+            None
+        }
+        else {
+            Some(Utc.timestamp(connection.get_active_until() as i64, 0).to_rfc3339())
+        };
+
         DeviceConnection {
             id: connection.get_id().to_string(),
             client_state: match connection.get_state() {
@@ -128,6 +136,7 @@ impl From<control::ClientsResponse_Connection> for DeviceConnection {
             forward_port: connection.get_forward_port() as u16,
             forward_host: connection.get_forward_host().to_string(),
             remote_port: connection.get_remote_port() as u16,
+            active_until,
         }
     }
 }

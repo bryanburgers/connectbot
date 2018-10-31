@@ -49,6 +49,11 @@
                 </form>
             </div>
             <div>
+                Active until: <b><span item-active-until></span></b>
+                <form item-extend-form action="" method="POST">
+                    <button>Extend</button>
+                </form>
+            <div>
                 Forward: <b><span item-forward-host></span>:<span item-forward-port></span></b> &rarr; <b><span item-remote-port></span></b>
             </div>
         </div>
@@ -154,6 +159,14 @@
                 if (remote_portEl) { remote_portEl.innerText = connection.remote_port }
                 const form = connectionEl.querySelector('[item-form]')
                 if (form) { form.setAttribute('action', `/d/${device.id}/connections/${connection.id}/delete`) }
+                const extendForm = connectionEl.querySelector('[item-extend-form]')
+                if (extendForm) { extendForm.setAttribute('action', `/d/${device.id}/connections/${connection.id}/extend`) }
+
+                const active_untilEl = connectionEl.querySelector('[item-active-until]')
+                const activeUntil = moment.utc(connection.active_until, moment.ISO_8601)
+                if (active_untilEl) {
+                    active_untilEl.innerText = activeUntil.local().format('ddd, MMM D, h:mm a')
+                }
 
                 connectionsEl.appendChild(connectionEl)
             }

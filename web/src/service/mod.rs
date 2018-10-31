@@ -124,8 +124,21 @@ impl_web! {
         }
 
         #[post("/d/:device_id/connections/:connection_id/delete")]
-        fn delete_connections(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
+        fn delete_connection(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
             self.client.disconnect_connection(&device_id, &connection_id).and_then(move |_| {
+                let response = http::Response::builder()
+                    .header("location", format!("/d/{}", device_id))
+                    .status(http::StatusCode::SEE_OTHER)
+                    .body("")
+                    .unwrap();
+
+                Ok(response)
+            })
+        }
+
+        #[post("/d/:device_id/connections/:connection_id/extend")]
+        fn extend_connection(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
+            self.client.extend_connection(&device_id, &connection_id).and_then(move |_| {
                 let response = http::Response::builder()
                     .header("location", format!("/d/{}", device_id))
                     .status(http::StatusCode::SEE_OTHER)

@@ -66,10 +66,15 @@ impl Server {
                                 world::SshForwardClientState::Disconnected => control::ClientsResponse_ClientState::DISCONNECTED,
                                 world::SshForwardClientState::Failed => control::ClientsResponse_ClientState::FAILED,
                             });
-                            connection.set_active(match forward.server_state {
-                                world::SshForwardServerState::Active { .. } => control::ClientsResponse_ActiveState::ACTIVE,
-                                world::SshForwardServerState::Inactive { .. } => control::ClientsResponse_ActiveState::INACTIVE,
-                            });
+                            match forward.server_state {
+                                world::SshForwardServerState::Active { until } => {
+                                    connection.set_active(control::ClientsResponse_ActiveState::ACTIVE);
+                                    connection.set_active_until(until.timestamp() as u64);
+                                },
+                                world::SshForwardServerState::Inactive { .. } => {
+                                    connection.set_active(control::ClientsResponse_ActiveState::INACTIVE);
+                                },
+                            }
                             connection.set_forward_host(forward.forward_host.clone().into());
                             connection.set_forward_port(forward.forward_port as u32);
                             connection.set_remote_port(forward.remote_port.as_ref().map_or(0, |item| item.value() as u32));
@@ -227,6 +232,36 @@ impl Server {
                             Box::new(f)
                         }
                     }
+                }
+
+                if ssh_connection.has_extend_timeout() {
+                    let extend = ssh_connection.take_extend_timeout();
+                    let mut world = world.write().unwrap();
+
+                    let device = world.devices.get_mut(&device_id);
+
+                    let mut ssh_connection_response = control::SshConnectionResponse::new();
+
+                    if let Some(device) = device {
+                        let connection_id = extend.get_connection_id();
+
+                        device.ssh_forwards.extend(connection_id);
+
+                        ssh_connection_response.set_status(control::SshConnectionResponse_Status::SUCCESS);
+                    }
+                    else {
+                        ssh_connection_response.set_status(control::SshConnectionResponse_Status::ERROR);
+                    }
+
+                    let mut response = control::ServerMessage::new();
+                    response.set_ssh_connection_response(ssh_connection_response);
+                    response.set_in_response_to(message.get_message_id());
+
+                    let f = tx.clone().send(response)
+                        .map(|_| ())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                    return Box::new(f);
                 }
             }
 
