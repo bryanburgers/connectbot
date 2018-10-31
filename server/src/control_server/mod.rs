@@ -71,8 +71,9 @@ impl Server {
                                     connection.set_active(control::ClientsResponse_ActiveState::ACTIVE);
                                     connection.set_active_until(until.timestamp() as u64);
                                 },
-                                world::SshForwardServerState::Inactive { .. } => {
+                                world::SshForwardServerState::Inactive { since } => {
                                     connection.set_active(control::ClientsResponse_ActiveState::INACTIVE);
+                                    connection.set_active_until(since.timestamp() as u64);
                                 },
                             }
                             connection.set_forward_host(forward.forward_host.clone().into());

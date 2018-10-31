@@ -188,8 +188,8 @@ impl SshForwards {
         }
 
         self.forwards.retain(|item| {
-            match (&item.client_state, &item.server_state) {
-                (SshForwardClientState::Disconnected, SshForwardServerState::Inactive { since }) if since < &cutoff => false,
+            match &item.server_state {
+                SshForwardServerState::Inactive { since } if since < &cutoff => false,
                 _ => true,
             }
         });
