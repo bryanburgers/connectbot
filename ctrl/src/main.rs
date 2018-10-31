@@ -65,6 +65,16 @@ fn main() {
                          .help("The id of the device to create")
                          .required(true)
                          .takes_value(true)))
+        .subcommand(SubCommand::with_name("set-name")
+                    .about("Change the human-friendly name of a device")
+                    .arg(Arg::with_name("device")
+                         .help("The id of the device to change")
+                         .required(true)
+                         .takes_value(true))
+                    .arg(Arg::with_name("name")
+                         .help("The new name of the device")
+                         .required(true)
+                         .takes_value(true)))
         .get_matches();
 
     // let id = matches.value_of("id").unwrap();
@@ -77,6 +87,7 @@ fn main() {
         ("query", Some(matches)) => query(client, matches),
         ("create", Some(matches)) => create(client, matches),
         ("remove", Some(matches)) => remove(client, matches),
+        ("set-name", Some(matches)) => set_name(client, matches),
         _ => {},
     }
 }
@@ -129,6 +140,18 @@ fn create(client: CommsClient, matches: &clap::ArgMatches) {
 fn remove(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let future = client.remove_device(device_id)
+        .map(|response| {
+            println!("{:#?}", response);
+        })
+        .map_err(|e| println!("Error: {}", e));
+
+    tokio::run(future);
+}
+
+fn set_name(client: CommsClient, matches: &clap::ArgMatches) {
+    let device_id = matches.value_of("device").unwrap();
+    let name = matches.value_of("name").unwrap();
+    let future = client.set_name(device_id, name)
         .map(|response| {
             println!("{:#?}", response);
         })

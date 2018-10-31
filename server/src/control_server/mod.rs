@@ -49,6 +49,7 @@ impl Server {
                         // println!("{:?} {:?}", key, value);
                         let mut client_data = control::ClientsResponse_Client::new();
                         client_data.set_id(device.id.clone().into());
+                        client_data.set_name(device.name.clone().into());
                         if let world::ConnectionStatus::Connected { ref address } = device.connection_status {
                             client_data.set_address(address.to_string().into());
                         }
@@ -281,6 +282,37 @@ impl Server {
 
                 let mut response = control::ServerMessage::new();
                 response.set_remove_device_response(remove_device_response);
+                response.set_in_response_to(message.get_message_id());
+
+                let f = tx.clone().send(response)
+                    .map(|_| ())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
+
+                return Box::new(f);
+            }
+
+            if message.has_set_name() {
+                let set_name = message.take_set_name();
+                let device_id = set_name.get_device_id().to_string();
+                let name = set_name.get_name().to_string();
+
+                let mut world = world.write().unwrap();
+
+                let device = world.devices.get_mut(&device_id);
+
+                let mut set_name_response = control::SetNameResponse::new();
+
+                if let Some(device) = device {
+                    device.name = name;
+
+                    set_name_response.set_status(control::SetNameResponse_Status::SUCCESS);
+                }
+                else {
+                    set_name_response.set_status(control::SetNameResponse_Status::NOT_FOUND);
+                }
+
+                let mut response = control::ServerMessage::new();
+                response.set_set_name_response(set_name_response);
                 response.set_in_response_to(message.get_message_id());
 
                 let f = tx.clone().send(response)

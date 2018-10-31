@@ -83,6 +83,18 @@ impl Client {
         RequestResponseFuture::new(&self.addr, message)
             .map(|mut response| response.take_remove_device_response())
     }
+
+    pub fn set_name(&self, device_id: &str, name: &str) -> impl Future<Item=protos::control::SetNameResponse, Error=std::io::Error> {
+        let mut message = protos::control::ClientMessage::new();
+        let mut set_name = protos::control::SetName::new();
+        set_name.set_device_id(device_id.into());
+        set_name.set_name(name.into());
+        message.set_message_id(1);
+        message.set_set_name(set_name);
+
+        RequestResponseFuture::new(&self.addr, message)
+            .map(|mut response| response.take_set_name_response())
+    }
 }
 
 pub struct GetStateFuture {

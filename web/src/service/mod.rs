@@ -66,6 +66,7 @@ struct Device {
 impl From<control::ClientsResponse_Client> for Device {
     fn from(mut client: control::ClientsResponse_Client) -> Self {
         let id = client.take_id().to_string();
+        let name = client.take_name().to_string();
         let connection_history = client.take_connection_history()
             .into_iter()
             .map(Into::into)
@@ -85,7 +86,7 @@ impl From<control::ClientsResponse_Client> for Device {
         };
 
         Device {
-            name: id.clone(),
+            name: name,
             id: id,
             address,
             connections,

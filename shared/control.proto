@@ -10,6 +10,7 @@ message ClientMessage {
     SshConnection ssh_connection = 4;
     CreateDevice create_device = 5;
     RemoveDevice remove_device = 6;
+    SetName set_name = 7;
   }
 }
 
@@ -21,6 +22,7 @@ message ServerMessage {
     SshConnectionResponse ssh_connection_response = 4;
     CreateDeviceResponse create_device_response = 5;
     RemoveDeviceResponse remove_device_response = 6;
+    SetNameResponse set_name_response = 7;
   }
 }
 
@@ -36,6 +38,8 @@ message ClientsResponse {
     string address = 3;
     // A history of connections for this client.
     repeated ConnectionHistoryItem connection_history = 4;
+    // The name of the device
+    string name = 5;
   }
 
   enum State {
@@ -158,4 +162,19 @@ message RemoveDeviceResponse {
   }
 
   Response response = 1;
+}
+
+message SetName {
+  string device_id = 1;
+  string name = 2;
+}
+
+message SetNameResponse {
+  enum Status {
+    UNKNOWN_RESPONSE = 0;
+    SUCCESS = 1;
+    NOT_FOUND = 2;
+  }
+
+  Status status = 1;
 }
