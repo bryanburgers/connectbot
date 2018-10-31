@@ -59,12 +59,12 @@ impl Server {
                             let mut connection = control::ClientsResponse_Connection::new();
                             connection.set_id(forward.id.clone().into());
                             connection.set_state(match forward.client_state {
-                                world::SshForwardClientState::Requested => control::ClientsResponse_State::REQUESTED,
-                                world::SshForwardClientState::Connecting => control::ClientsResponse_State::CONNECTING,
-                                world::SshForwardClientState::Connected => control::ClientsResponse_State::CONNECTED,
-                                world::SshForwardClientState::Disconnecting => control::ClientsResponse_State::DISCONNECTING,
-                                world::SshForwardClientState::Disconnected => control::ClientsResponse_State::DISCONNECTED,
-                                world::SshForwardClientState::Failed => control::ClientsResponse_State::FAILED,
+                                world::SshForwardClientState::Requested => control::ClientsResponse_ClientState::REQUESTED,
+                                world::SshForwardClientState::Connecting => control::ClientsResponse_ClientState::CONNECTING,
+                                world::SshForwardClientState::Connected => control::ClientsResponse_ClientState::CONNECTED,
+                                world::SshForwardClientState::Disconnecting => control::ClientsResponse_ClientState::DISCONNECTING,
+                                world::SshForwardClientState::Disconnected => control::ClientsResponse_ClientState::DISCONNECTED,
+                                world::SshForwardClientState::Failed => control::ClientsResponse_ClientState::FAILED,
                             });
                             connection.set_active(match forward.server_state {
                                 world::SshForwardServerState::Active => control::ClientsResponse_ActiveState::ACTIVE,

@@ -42,7 +42,7 @@ message ClientsResponse {
     string name = 5;
   }
 
-  enum State {
+  enum ClientState {
     UNKNOWN_STATE = 0;
     REQUESTED = 1;
     CONNECTING = 2;
@@ -61,7 +61,7 @@ message ClientsResponse {
   message Connection {
     // The globally unique ID of the client.
     string id = 1;
-    State state = 2;
+    ClientState state = 2;
     ActiveState active = 3;
     string forward_host = 4;
     uint32 forward_port = 5;

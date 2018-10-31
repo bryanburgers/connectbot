@@ -29,7 +29,7 @@
         .device header {
             margin-bottom: 0.2em;
         }
-        .device h2 {
+        .device h1, .device h2 {
             color: #333;
             display: inline;
             font-size: 1.5em;
@@ -105,6 +105,25 @@
         .durations button[data-selected=selected] {
             cursor: default;
             color: inherit;
+        }
+
+        /* Device page stuff */
+        .connections {
+            margin: 1em 0;
+        }
+        .connections .connection {
+            font-size: 0.7em;
+            border-radius: 0.4em;
+            margin-top: 1em;
+            padding: 0.4em;
+        }
+        .connections .connection.inactive {
+            color: #999;
+            background: #ddd;
+        }
+        .connections .connection.active {
+            color: #000;
+            background: #cec;
         }
     </style>
 </head>

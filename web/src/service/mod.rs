@@ -1,4 +1,3 @@
-use chrono::{TimeZone, Utc};
 use connectbot_shared::client::Client;
 use connectbot_shared::protos::control;
 use http;
@@ -14,6 +13,9 @@ use tower_web::{
     impl_web_clean_nested,
     impl_web_clean_top_level,
 };
+
+mod device;
+use self::device::Device;
 
 /// This type will be part of the web service as a resource.
 #[derive(Clone, Debug)]
@@ -50,102 +52,6 @@ impl From<control::ClientsResponse> for DevicesResponse {
         let devices: Vec<Device> = devices.into_iter().map(|client| client.into()).collect();
         DevicesResponse {
             devices,
-        }
-    }
-}
-
-#[derive(Serialize, Debug)]
-struct Device {
-    id: String,
-    name: String,
-    address: Option<String>,
-    connections: Vec<DeviceConnection>,
-    connection_history: Vec<DeviceHistoryItem>,
-}
-
-impl From<control::ClientsResponse_Client> for Device {
-    fn from(mut client: control::ClientsResponse_Client) -> Self {
-        let id = client.take_id().to_string();
-        let name = client.take_name().to_string();
-        let connection_history = client.take_connection_history()
-            .into_iter()
-            .map(Into::into)
-            .collect();
-
-        let connections = client.take_connections()
-            .into_iter()
-            .map(Into::into)
-            .collect();
-
-        let address = client.take_address().to_string();
-        let address = if address == "" {
-            None
-        }
-        else {
-            Some(address)
-        };
-
-        Device {
-            name: name,
-            id: id,
-            address,
-            connections,
-            connection_history,
-        }
-    }
-}
-
-#[derive(Serialize, Debug)]
-struct DeviceHistoryItem {
-    connected_at: String,
-    last_message: Option<String>,
-    address: String,
-}
-
-impl From<control::ClientsResponse_ConnectionHistoryItem> for DeviceHistoryItem {
-    fn from(client: control::ClientsResponse_ConnectionHistoryItem) -> Self {
-        let history_type = client.get_field_type();
-        let connected_at = Utc.timestamp(client.get_connected_at() as i64, 0);
-        let last_message = Utc.timestamp(client.get_last_message() as i64, 0);
-        let address = client.get_address().to_string();
-
-        match history_type {
-            control::ClientsResponse_ConnectionHistoryType::UNKNOWN_CONNECTION_HISTORY_TYPE => {
-                panic!("Invalid response!");
-            },
-            control::ClientsResponse_ConnectionHistoryType::CLOSED => {
-                DeviceHistoryItem {
-                    connected_at: connected_at.to_rfc3339(),
-                    last_message: Some(last_message.to_rfc3339()),
-                    address,
-                }
-            },
-            control::ClientsResponse_ConnectionHistoryType::OPEN => {
-                DeviceHistoryItem {
-                    connected_at: connected_at.to_rfc3339(),
-                    last_message: None,
-                    address,
-                }
-            },
-        }
-    }
-}
-
-#[derive(Serialize, Debug)]
-struct DeviceConnection {
-    id: String,
-    remote_port: u16,
-    forward_port: u16,
-    forward_host: String,
-}
-
-impl From<control::ClientsResponse_Connection> for DeviceConnection {
-    fn from(connection: control::ClientsResponse_Connection) -> Self {
-        DeviceConnection {
-            id: connection.get_id().to_string(),
-            forward_port: connection.get_forward_port() as u16,
-            forward_host: connection.get_forward_host().to_string(),
-            remote_port: connection.get_remote_port() as u16,
         }
     }
 }
@@ -188,13 +94,20 @@ impl_web! {
             })
         }
 
-        #[get("/devices")]
+        #[get("/devices.json")]
         #[content_type("json")]
-        fn devices(&self) -> impl Future<Item=DevicesResponse, Error=std::io::Error> + Send {
+        fn devices_json(&self) -> impl Future<Item=DevicesResponse, Error=std::io::Error> + Send {
             self.client.get_clients().and_then(|devices| {
                 let devices = devices.into();
                 Ok(devices)
             })
+        }
+
+        #[get("/d/:device_id/json")]
+        #[content_type("json")]
+        fn device_json(&self, device_id: String) -> impl Future<Item=DeviceResponse, Error=std::io::Error> + Send {
+            // For now, this is the same exact response as we hand to the template.
+            self.device(device_id)
         }
 
         #[post("/d/:device_id/connections")]

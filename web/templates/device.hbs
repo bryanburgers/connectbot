@@ -1,23 +1,181 @@
 {{#> layout title=device.name}}
     {{#*inline "body"}}
-    <h1>{{ device.name }} ({{ device.id }})</h1>
+    <main id="device">
+        <article data-id="{{device.id}}" class="device">
+            <header>
+                <h1 item-name>{{device.name}}</h1>
+                <h3 item-id class="id"></h3>
+                <h3 item-address class="address" data-visible></h3>
+            </header>
+            <div class="main">
+                <div item-history class="history"></div>
+            </div>
+        </article>
+    </main>
 
-    <form action="/d/{{device.id}}/connections" method="POST">
-        <input type="hidden" name="host" value="localhost">
-        <input type="text" name="port" value="80">
-        <button>Submit</button>
-    </form>
+    <details>
+        <summary>Create new connection</summary>
+        <form action="/d/{{device.id}}/connections" method="POST">
+            <div><strong>Host</strong></div>
+            <div><label><input type="radio" name="host" value="localhost" checked> The connected device</label></div>
+            <div><label><input type="radio" name="host" value="remote" disabled> A device on the network <input type="text" name="host_value" placeholder="e.g., 10.0.0.2"></label></div>
+            <div><strong>Port</strong></div>
+            <div><label><input type="radio" name="port" value="22" checked> Forward the SSH port</label></div>
+            <div><label><input type="radio" name="port" value="80"> Tunnel HTTP</label></div>
+            <button>Create</button>
+        </form>
+    </details>
 
-    <h2>Connections</h2>
-    <ul>
-        {{#each device.connections as |connection|}}
-        <li>
-            {{ connection.forward_host }}:{{ connection.forward_port }} -> {{ connection.remote_port }}
-            <form action="/d/{{../device.id}}/connections/{{connection.id}}/delete" method="POST">
-                <button>Disconnect</button>
-            </form>
-        </li>
-        {{/each}}
-    </ul>
+    <template id="device-template">
+        <article data-id class="device">
+            <header>
+                <h1 item-name></h1>
+                <h3 item-id class="id"></h3>
+                <h3 item-address class="address" data-visible></h3>
+            </header>
+            <div class="main">
+                <div item-history class="history"></div>
+                <div item-connections class="connections"></div>
+            </div>
+        </article>
+    </template>
+
+    <template id="connection-template-active">
+        <div data-id class="connection active" data-client-state data-active-state=active>
+            <div>
+                State: <b><span item-client-state></span></b>
+                <form item-form action="" method="POST">
+                    <button>Disconnect</button>
+                </form>
+            </div>
+            <div>
+                Forward: <b><span item-forward-host></span>:<span item-forward-port></span></b> &rarr; <b><span item-remote-port></span></b>
+            </div>
+        </div>
+    </template>
+
+    <template id="connection-template-inactive">
+        <div data-id class="connection inactive" data-client-state data-active-state=inactive>
+            <div>
+                State: <b><span item-client-state></span></b>
+            </div>
+            <div>
+                Forward: <b><span item-forward-host></span>:<span item-forward-port></span></b>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        window.selectedHours = 2;
+        const id = "{{ device.id }}"
+
+        async function build() {
+            const response = await fetch(`/d/${id}/json`)
+            const json = await response.json();
+            window.deviceData = json
+
+            render()
+        }
+
+        function render() {
+            const template = document.getElementById('device-template')
+            const deviceElement = document.getElementById('device')
+
+            const fragment = document.createDocumentFragment()
+
+            const device = window.deviceData.device;
+
+            const node = document.importNode(template.content, true)
+            const li = node.firstElementChild
+            li.setAttribute('data-id', device.id)
+
+            let nameEl = li.querySelector('[item-name]')
+            nameEl.innerText = device.name
+
+            let idEl = li.querySelector('[item-id]')
+            idEl.innerText = device.id
+
+            let addressEl = li.querySelector('[item-address]')
+            if (device.address) {
+                addressEl.innerText = device.address
+                addressEl.setAttribute('data-visible', 'visible')
+                addressEl.setAttribute('data-state', 'active')
+            }
+            else if (device.connection_history.length && device.connection_history[device.connection_history.length - 1].address) {
+                addressEl.innerText = device.connection_history[device.connection_history.length - 1].address
+                addressEl.setAttribute('data-visible', 'visible')
+                addressEl.setAttribute('data-state', 'inactive')
+            }
+
+            const historyEl = li.querySelector('[item-history]')
+            const now = moment.utc()
+            const start = now.clone().subtract(window.selectedHours, 'hours').unix()
+            const end = now.unix()
+            const duration = end - start
+            for (let history of device.connection_history) {
+                if (history.last_message && history.last_message < start) {
+                    continue
+                }
+                const el = document.createElement('div')
+                el.setAttribute('class', 'history-item')
+                const connectedAt = moment.utc(history.connected_at, moment.ISO_8601)
+                const barStart = (Math.max(connectedAt.unix(), start) - start)/duration
+
+                el.style.left = (100 * barStart) + '%'
+
+                if (history.last_message) {
+                    const lastMessage = moment.utc(history.last_message, moment.ISO_8601)
+                    const barEnd = (Math.max(lastMessage.unix(), start) - start)/duration
+                    el.style.right = ((1 - barEnd) * 100) + '%'
+                }
+                else {
+                    el.style.right = '0'
+                }
+
+                historyEl.appendChild(el)
+            }
+
+            const connectionsEl = li.querySelector('[item-connections]')
+            for (let connection of device.connections) {
+                const connectionTemplate = document.getElementById(`connection-template-${connection.active_state}`)
+                const connectionNode = document.importNode(connectionTemplate.content, true)
+                const connectionEl = connectionNode.firstElementChild
+                connectionEl.setAttribute('data-id', connection.id)
+                connectionEl.setAttribute('data-client-state', connection.client_state)
+                const active_stateEl = connectionEl.querySelector('[item-active-state]')
+                if (active_stateEl) { active_stateEl.innerText = connection.active_state }
+                const client_stateEl = connectionEl.querySelector('[item-client-state]')
+                if (client_stateEl) { client_stateEl.innerText = connection.client_state }
+                const forward_hostEl = connectionEl.querySelector('[item-forward-host]')
+                if (forward_hostEl) { forward_hostEl.innerText = connection.forward_host }
+                const forward_portEl = connectionEl.querySelector('[item-forward-port]')
+                if (forward_portEl) { forward_portEl.innerText = connection.forward_port }
+                const remote_portEl = connectionEl.querySelector('[item-remote-port]')
+                if (remote_portEl) { remote_portEl.innerText = connection.remote_port }
+                const form = connectionEl.querySelector('[item-form]')
+                if (form) { form.setAttribute('action', `/d/${device.id}/connections/${connection.id}/delete`) }
+
+                connectionsEl.appendChild(connectionEl)
+            }
+
+            fragment.appendChild(li)
+
+            while (deviceElement.firstChild) {
+                deviceElement.removeChild(deviceElement.firstChild)
+            }
+            deviceElement.appendChild(fragment)
+        }
+
+        build().catch(err => console.log(err))
+
+        setInterval(async () => {
+            try {
+                await build()
+            }
+            catch (err) {
+                console.log(err)
+            }
+        }, 2000)
+    </script>
     {{/inline}}
 {{/layout}}
