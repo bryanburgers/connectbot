@@ -1,6 +1,9 @@
+use chrono::{DateTime, Utc};
+use chrono::Duration;
 use uuid;
 use super::port_allocator::PortAllocator;
 use super::port_allocator::RemotePort;
+use super::super::device_server::client_connection::ClientConnectionHandle;
 
 /// Information about a single ssh forwarding
 #[derive(Debug)]
@@ -37,12 +40,10 @@ pub struct SshForwardData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshForwardServerState {
-    // TODO: Active until...
     /// The server is actively attempting to keep the device connected
-    Active,
-    // TODO: Inactive since?
+    Active { until: DateTime<Utc> },
     /// The server will no longer keep the device connected
-    Inactive,
+    Inactive { since: DateTime<Utc> },
 }
 
 /// The state of the connection, as the client has reported it to us.
@@ -101,10 +102,12 @@ impl SshForwards {
             _ => self.allocator.allocate().expect("Ran out of ports"),
         };
 
+        let until = Utc::now() + Duration::days(1);
+
         let forward = SshForward {
             id: id.clone(),
             client_state: SshForwardClientState::Requested,
-            server_state: SshForwardServerState::Active,
+            server_state: SshForwardServerState::Active { until },
             forward_host,
             forward_port,
             remote_port: Some(remote_port),
@@ -144,7 +147,7 @@ impl SshForwards {
         let mut success = false;
         for item in self.forwards.iter_mut() {
             if item.id == id {
-                item.server_state = SshForwardServerState::Inactive;
+                item.server_state = SshForwardServerState::Inactive { since: Utc::now() };
                 success = true;
                 break;
             }
@@ -152,14 +155,26 @@ impl SshForwards {
         success
     }
 
-    pub fn cleanup(&mut self) {
-        /*
+    pub fn cleanup(&mut self, now: DateTime<Utc>, cutoff: DateTime<Utc>, active_connection: Option<ClientConnectionHandle>) {
+        for item in self.forwards.iter_mut() {
+            match item.server_state {
+                SshForwardServerState::Active { until } if until < now => (),
+                _ => {
+                    continue;
+                }
+            }
+
+            item.server_state = SshForwardServerState::Inactive { since: now };
+            if let Some(ref active_connection) = active_connection {
+                active_connection.disconnect_ssh_no_future(&item.id);
+            }
+        }
+
         self.forwards.retain(|item| {
-            match item {
-                ConnectionHistoryItem::Closed { last_message, .. } if last_message < &cutoff => false,
+            match (&item.client_state, &item.server_state) {
+                (SshForwardClientState::Disconnected, SshForwardServerState::Inactive { since }) if since < &cutoff => false,
                 _ => true,
             }
         });
-        */
     }
 }

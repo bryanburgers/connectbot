@@ -67,8 +67,8 @@ impl Server {
                                 world::SshForwardClientState::Failed => control::ClientsResponse_ClientState::FAILED,
                             });
                             connection.set_active(match forward.server_state {
-                                world::SshForwardServerState::Active => control::ClientsResponse_ActiveState::ACTIVE,
-                                world::SshForwardServerState::Inactive => control::ClientsResponse_ActiveState::INACTIVE,
+                                world::SshForwardServerState::Active { .. } => control::ClientsResponse_ActiveState::ACTIVE,
+                                world::SshForwardServerState::Inactive { .. } => control::ClientsResponse_ActiveState::INACTIVE,
                             });
                             connection.set_forward_host(forward.forward_host.clone().into());
                             connection.set_forward_port(forward.forward_port as u32);

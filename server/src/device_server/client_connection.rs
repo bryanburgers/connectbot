@@ -53,7 +53,7 @@ pub struct ClientConnection {
 
 /// A handle to an active client connection. Certain messages can be sent on this client's back
 /// channel to the client.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientConnectionHandle {
     /// The UUID of the *Connection* (not the client)
     id: usize,
@@ -80,6 +80,14 @@ impl ClientConnectionHandle {
         self.sender.clone().send(BackchannelMessage::SshDisconnect(id.to_string()))
             .map(|_| ())
             .map_err(|err| panic!("{:?}", err))
+    }
+
+    pub fn disconnect_ssh_no_future(&self, id: &str) {
+        let result = self.sender.clone().try_send(BackchannelMessage::SshDisconnect(id.to_string()));
+        match result {
+            Err(err) => println!("Failed to send disconnect to device after ssh timeout: {:?}", err),
+            _ => {},
+        }
     }
 
     pub fn get_id(&self) -> usize {
@@ -197,7 +205,10 @@ impl ClientConnection {
                 let world = self.world.read().unwrap();
                 let device = world.devices.get(&device_id).unwrap();
                 device.ssh_forwards.iter()
-                    .filter(|forward| forward.server_state == world::SshForwardServerState::Active)
+                    .filter(|forward| match forward.server_state {
+                        world::SshForwardServerState::Active { .. } => true,
+                        _ => false,
+                    })
                     .map(|forward| forward.data())
                     .collect()
             };
