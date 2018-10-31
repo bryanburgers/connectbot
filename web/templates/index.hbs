@@ -49,7 +49,7 @@
         }, true);
 
         async function build() {
-            const response = await fetch('/devices')
+            const response = await fetch('/devices.json')
             const json = await response.json();
             window.deviceData = json
 
