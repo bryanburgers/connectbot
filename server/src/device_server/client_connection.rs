@@ -31,11 +31,11 @@ pub struct ClientConnection {
     /// The IP address of the connection
     address: SocketAddr,
     /// The channel on which to send messages back to the client
-    tx: Sender<device::ServerMessage>,
+    socket_sender: Sender<device::ServerMessage>,
     /// Temporary storage for the receiver. Once the connection starts, this will be taken and
     /// replaced with None, so is mostly useless except to temporarily store it before the
     /// connection starts.
-    rx: Option<Receiver<device::ServerMessage>>,
+    socket_receiver: Option<Receiver<device::ServerMessage>>,
     /// The channel which other things (especially the ClientConnectionHandle) can use to send
     /// back-channel messages to this client.
     back_channel_sender: Sender<BackchannelMessage>,
@@ -64,22 +64,43 @@ pub struct ClientConnectionHandle {
 impl ClientConnectionHandle {
     pub fn disconnect(&self) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::Disconnect)
-            .map(|_| ())
-            .map_err(|err| panic!("{:?}", err))
+            .then(|result| {
+                match result {
+                    Ok(_) => Ok(()),
+                    Err(err) => {
+                        println!("Failed to send BackchannelMessage::Disconnect: {:?}", err);
+                        Ok(())
+                    },
+                }
+            })
     }
 
     /// Notify the client that an SSH connection should be handled
     pub fn connect_ssh(&self, id: &str) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::SshConnect(id.to_string()))
-            .map(|_| ())
-            .map_err(|err| panic!("{:?}", err))
+            .then(|result| {
+                match result {
+                    Ok(_) => Ok(()),
+                    Err(err) => {
+                        println!("Failed to send BackchannelMessage::SshConnect: {:?}", err);
+                        Ok(())
+                    },
+                }
+            })
     }
 
     /// Notify the client that an SSH disconnection should be handled
     pub fn disconnect_ssh(&self, id: &str) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::SshDisconnect(id.to_string()))
-            .map(|_| ())
-            .map_err(|err| panic!("{:?}", err))
+            .then(|result| {
+                match result {
+                    Ok(_) => Ok(()),
+                    Err(err) => {
+                        println!("Failed to send BackchannelMessage::SshDisconnect: {:?}", err);
+                        Ok(())
+                    },
+                }
+            })
     }
 
     pub fn disconnect_ssh_no_future(&self, id: &str) {
@@ -98,18 +119,18 @@ impl ClientConnectionHandle {
 impl ClientConnection {
     /// Create a new client
     pub fn new(id: usize, addr: SocketAddr, world: SharedWorld, config: SharedConfig) -> ClientConnection {
-        let (sender, receiver) = channel(3);
-        let (tx, rx) = futures::sync::mpsc::channel(0);
+        let (back_channel_sender, back_channel_receiver) = channel(5);
+        let (socket_sender, socket_receiver) = channel(5);
 
         ClientConnection {
-            config: config,
-            id: id,
-            world: world,
+            config,
+            id,
+            world,
             address: addr,
-            tx: tx,
-            rx: Some(rx),
-            back_channel_sender: sender,
-            back_channel: Some(receiver),
+            socket_sender,
+            socket_receiver: Some(socket_receiver),
+            back_channel_sender,
+            back_channel: Some(back_channel_receiver),
             device_id: None,
             last_message: None,
             cancel_handle: None,
@@ -178,7 +199,7 @@ impl ClientConnection {
             let mut message = device::ServerMessage::new();
             message.set_pong(pong);
 
-            let f = self.tx.clone().send(message)
+            let f = self.socket_sender.clone().send(message)
                 .map(|_| self)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
 
@@ -214,9 +235,9 @@ impl ClientConnection {
             };
 
             let future = {
-                let tx = self.tx.clone();
+                let socket_sender = self.socket_sender.clone();
                 let config = self.config.clone();
-                let futures = forwards.into_iter().map(move |forward| Self::sender_send_connect_ssh(tx.clone(), forward, config.clone()));
+                let futures = forwards.into_iter().map(move |forward| Self::sender_send_connect_ssh(socket_sender.clone(), forward, config.clone()));
                 futures::future::join_all(futures)
             };
 
@@ -259,7 +280,7 @@ impl ClientConnection {
                         // We don't know about this SSH connection. We should tell the client to
                         // terminate it.
 
-                        let future = Self::sender_send_disconnect_ssh(self.tx.clone(), connection_id);
+                        let future = Self::sender_send_disconnect_ssh(self.socket_sender.clone(), connection_id);
                         Some(future)
                     }
                 }
@@ -311,7 +332,7 @@ impl ClientConnection {
         let mut response = device::ServerMessage::new();
         response.set_ping(ping);
 
-        let f = self.tx.clone().send(response)
+        let f = self.socket_sender.clone().send(response)
             .map(|_| self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ping: {}", e)));
 
@@ -336,7 +357,7 @@ impl ClientConnection {
                     device.ssh_forwards.find(&id).map(|forward| forward.data())
                 };
                 if let Some(forward) = forward {
-                    let future = Self::sender_send_connect_ssh(self.tx.clone(), forward, self.config.clone());
+                    let future = Self::sender_send_connect_ssh(self.socket_sender.clone(), forward, self.config.clone());
                     let f = future
                         .map(|_| self);
                     Box::new(f)
@@ -352,7 +373,7 @@ impl ClientConnection {
                     device.ssh_forwards.find(&id).map(|forward| forward.data())
                 };
                 if let Some(forward) = forward {
-                    let future = Self::sender_send_disconnect_ssh(self.tx.clone(), &forward.id);
+                    let future = Self::sender_send_disconnect_ssh(self.socket_sender.clone(), &forward.id);
                     let f = future
                         .map(|_| self);
                     Box::new(f)
@@ -397,10 +418,10 @@ impl ClientConnection {
         // In order to send things to the client, we set up a channel, and we forward that
         // receiving end directly to the client on the TlsStream.
         let client_message_sink = client_message_sink.sink_map_err(|err| panic!("{:?}", err));
-        let rx = std::mem::replace(&mut self.rx, None);
-        let rx = rx.unwrap().map_err(|err| panic!("{:?}", err));
+        let socket_receiver = std::mem::replace(&mut self.socket_receiver, None);
+        let socket_receiver = socket_receiver.unwrap().map_err(|err| panic!("{:?}", err));
         let connection_id = self.id.clone();
-        let rx_forward = rx.inspect(move |message| {
+        let socket_forward = socket_receiver.inspect(move |message| {
             if !message.has_ping() && !message.has_pong() {
                 println!("↓ {:4}: {:?}", connection_id, message);
             }
@@ -435,7 +456,7 @@ impl ClientConnection {
         })
             .and_then(|client_connection| client_connection.on_disconnect());
 
-        send.join(rx_forward)
+        send.join(socket_forward)
             .map(|_| ())
     }
 }
