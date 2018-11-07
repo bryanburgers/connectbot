@@ -56,6 +56,12 @@
             <div>
                 Forward: <b><span item-forward-host></span>:<span item-forward-port></span></b> &rarr; <b><span item-remote-port></span></b>
             </div>
+            <div item-command-container style="display:none;">
+                Command: <b><span item-command></span></b>
+            </div>
+            <div item-link-container style="display:none;">
+                Link: <a href="" item-link></a>
+            </div>
         </div>
     </template>
 
@@ -166,6 +172,26 @@
                 const activeUntil = moment.utc(connection.active_until, moment.ISO_8601)
                 if (active_untilEl) {
                     active_untilEl.innerText = activeUntil.local().format('ddd, MMM D, h:mm a')
+                }
+
+                if (connection.is_http) {
+                    const container = connectionEl.querySelector('[item-link-container]')
+                    const el = connectionEl.querySelector('[item-link]')
+                    if (container && el) {
+                        container.style.display = 'block'
+                        const url = `${window.location.protocol}//${connection.remote_port}.${window.location.hostname}`
+                        el.href = url
+                        el.innerText = url
+                    }
+                }
+
+                if (connection.is_ssh) {
+                    const container = connectionEl.querySelector('[item-command-container]')
+                    const el = connectionEl.querySelector('[item-command]')
+                    if (container && el) {
+                        container.style.display = 'block'
+                        el.innerText = `ssh -o Port=${connection.remote_port} root@${window.location.hostname}`
+                    }
                 }
 
                 connectionsEl.appendChild(connectionEl)

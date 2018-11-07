@@ -87,6 +87,8 @@ pub struct DeviceConnection {
     pub remote_port: u16,
     pub forward_port: u16,
     pub forward_host: String,
+    pub is_http: bool,
+    pub is_ssh: bool,
     pub active_until: Option<String>,
 }
 
@@ -136,6 +138,8 @@ impl From<control::ClientsResponse_Connection> for DeviceConnection {
             forward_port: connection.get_forward_port() as u16,
             forward_host: connection.get_forward_host().to_string(),
             remote_port: connection.get_remote_port() as u16,
+            is_http: connection.get_forward_port() == 80,
+            is_ssh: connection.get_forward_port() == 22,
             active_until,
         }
     }
