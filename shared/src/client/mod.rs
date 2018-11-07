@@ -32,11 +32,11 @@ impl Client {
         }
     }
 
-    pub fn connect_device(&self, device_id: &str, port: u16) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
+    pub fn connect_device(&self, device_id: &str, forward_host: &str, port: u16) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut ssh_connection = protos::control::SshConnection::new();
         let mut enable = protos::control::SshConnection_Enable::new();
-        enable.set_forward_host("localhost".into());
+        enable.set_forward_host(forward_host.into());
         enable.set_forward_port(port as u32);
         enable.set_gateway_port(true);
         ssh_connection.set_device_id(device_id.into());

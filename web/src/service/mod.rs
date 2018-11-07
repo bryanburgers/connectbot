@@ -59,6 +59,7 @@ impl From<control::ClientsResponse> for DevicesResponse {
 #[derive(Extract, Debug)]
 struct CreateConnection {
     host: String,
+    host_value: String,
     port: u16,
 }
 
@@ -112,7 +113,11 @@ impl_web! {
 
         #[post("/d/:device_id/connections")]
         fn post_connections(&self, device_id: String, body: CreateConnection) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
-            self.client.connect_device(&device_id, body.port).and_then(move |_| {
+            let host = match body.host.as_ref() {
+                "remote" => body.host_value,
+                "localhost" | _ => "localhost".to_string(),
+            };
+            self.client.connect_device(&device_id, &host, body.port).and_then(move |_| {
                 let response = http::Response::builder()
                     .header("location", format!("/d/{}", device_id))
                     .status(http::StatusCode::SEE_OTHER)

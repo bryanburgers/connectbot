@@ -18,7 +18,7 @@
         <form action="/d/{{device.id}}/connections" method="POST">
             <div><strong>Host</strong></div>
             <div><label><input type="radio" name="host" value="localhost" checked> The connected device</label></div>
-            <div><label><input type="radio" name="host" value="remote" disabled> A device on the network <input type="text" name="host_value" placeholder="e.g., 10.0.0.2"></label></div>
+            <div><label><input type="radio" name="host" value="remote"> A device on the network <input type="text" name="host_value" placeholder="e.g., 10.0.0.2"></label></div>
             <div><strong>Port</strong></div>
             <div><label><input type="radio" name="port" value="22" checked> Forward the SSH port</label></div>
             <div><label><input type="radio" name="port" value="80"> Tunnel HTTP</label></div>
