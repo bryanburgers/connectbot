@@ -41,7 +41,7 @@ use std::fs::{self, File};
 use tokio_rustls::{
     rustls::{
         Certificate, PrivateKey, ServerConfig, NoClientAuth, AllowAnyAnonymousOrAuthenticatedClient, RootCertStore,
-        internal::pemfile::{ certs, rsa_private_keys }
+        internal::pemfile::{ certs, pkcs8_private_keys }
     },
 };
 
@@ -50,7 +50,7 @@ fn load_certs(path: &str) -> Vec<Certificate> {
 }
 
 fn load_keys(path: &str) -> Vec<PrivateKey> {
-    rsa_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+    pkcs8_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
 }
 
 fn main() {

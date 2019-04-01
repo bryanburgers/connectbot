@@ -13,6 +13,7 @@ Create the key for the server side of the connection. We should need only one.
 
     openssl genrsa -out server.key 4096
     openssl req -new -key server.key -out server.csr -nodes -subj "/CN=comms-server"
+    openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in server.key -out server-private.pem
     
     openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 36500 -sha256
     cat server.crt ca.crt > server.pem
