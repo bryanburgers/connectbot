@@ -27,6 +27,11 @@ fn main() {
                          .help("The id of the device to connect")
                          .required(true)
                          .takes_value(true))
+                    .arg(Arg::with_name("host")
+                         .help("The host to forward to")
+                         .required(true)
+                         .takes_value(true)
+                         .default_value("localhost"))
                     .arg(Arg::with_name("port")
                          .short("p")
                          .long("port")
@@ -106,8 +111,9 @@ fn main() {
 
 fn connect(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
+    let host = matches.value_of("host").unwrap();
     let port = matches.value_of("port").unwrap().parse().unwrap();
-    let future = client.connect_device(device_id, port)
+    let future = client.connect_device(device_id, host, port)
         .map(|response| {
             println!("{:#?}", response);
         })
