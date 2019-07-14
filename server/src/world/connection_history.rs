@@ -6,18 +6,22 @@ use chrono::{DateTime, Utc};
 pub struct ConnectionHistory(Vec<ConnectionHistoryItem>);
 
 impl ConnectionHistory {
+    /// Create a new connection history.
     pub fn new() -> ConnectionHistory {
         ConnectionHistory(Vec::new())
     }
 
+    /// Get the underlying iterator.
     pub fn iter(&self) -> ::std::slice::Iter<ConnectionHistoryItem> {
         self.0.iter()
     }
 
+    /// Mark a device as connected.
     pub fn connect(&mut self, connection_id: usize, connected_at: DateTime<Utc>, address: IpAddr) {
         self.0.push(ConnectionHistoryItem::Open { connection_id, connected_at, address });
     }
 
+    /// Mark a device as disconnected.
     pub fn disconnect(&mut self, connection_id: usize, last_message: DateTime<Utc>) {
         for i in 0..self.0.len() {
             let replace = match &self.0[i] {
@@ -36,6 +40,7 @@ impl ConnectionHistory {
         }
     }
 
+    /// Get rid of stale information that is older than the cutoff.
     pub fn cleanup(&mut self, cutoff: DateTime<Utc>) {
         self.0.retain(|item| {
             match item {

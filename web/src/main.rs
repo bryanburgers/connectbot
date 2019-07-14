@@ -55,7 +55,6 @@ pub fn main() {
 
     println!("Listening on http://{}", address);
 
-    let _assets_path = config_base.join(config.assets.path);
     let templates_path = config_base.join(config.templates.path);
 
     let mut handlebars_registry = handlebars::Handlebars::new();

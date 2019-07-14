@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package client;
 
+// A message from the client to the server
 message ClientMessage {
   oneof msg {
     Ping ping = 3;
@@ -11,6 +12,7 @@ message ClientMessage {
   }
 }
 
+// A message from the server to the client
 message ServerMessage {
   oneof msg {
     Ping ping = 3;
@@ -19,10 +21,14 @@ message ServerMessage {
   }
 }
 
+// Sent when one end of the connection wants to test whether the connection is
+// still alive, or to keep the connection alive.
 message Ping {}
 
+// Sent in response to a Ping.
 message Pong {}
 
+// The message used for a client to identify itself to the server.
 message Initialize {
   // The unique ID of the device
   string id = 1;
@@ -30,6 +36,8 @@ message Initialize {
   string comms_version = 2;
 }
 
+// Sent from the server to the client to tell the client to do something with
+// its SSH connections.
 message SshConnection {
   // Enable an SSH connection. This is idempotent: the server can send this as
   // frequently as it likes, and the client must be able to handle it.

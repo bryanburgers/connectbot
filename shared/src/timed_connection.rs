@@ -12,6 +12,8 @@ use futures::{Async, Poll, Stream};
 use std::time::{Instant, Duration};
 use tokio_timer::Interval;
 
+/// A stream that will timeout if it has not received a message from the other end of the
+/// connection for a configurable period of time.
 #[derive(Debug)]
 pub struct TimedConnection<T> {
     stream: Option<T>,
@@ -23,6 +25,7 @@ pub struct TimedConnection<T> {
 }
 
 impl<T> TimedConnection<T> {
+    /// Create a new timed connection from a stream.
     pub fn new(stream: T, options: TimedConnectionOptions) -> TimedConnection<T> {
         TimedConnection {
             stream: Some(stream),
@@ -35,8 +38,11 @@ impl<T> TimedConnection<T> {
     }
 }
 
+/// Options used when creating a new timed connection.
 pub struct TimedConnectionOptions {
+    /// How long after becoming idle should the connection emit a warning?
     pub warning_level: Duration,
+    /// How long after becoming idle should the connection disconnect?
     pub disconnect_level: Duration,
 }
 
@@ -49,9 +55,13 @@ impl Default for TimedConnectionOptions {
     }
 }
 
+/// The item type for a timed connection.
 #[derive(Debug)]
 pub enum TimedConnectionItem<T> {
+    /// An item from the underlying stream.
     Item(T),
+
+    /// A notification that the stream has been idle for the specified warning level.
     Timeout,
 }
 

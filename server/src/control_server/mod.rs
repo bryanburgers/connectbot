@@ -1,3 +1,6 @@
+//! Handling of the control server. The control server is the one that local controlling processes
+//! (like connectbot-ctrl and connectbot-web) use to talk to the server.
+
 use std;
 use tokio;
 use tokio::net::TcpStream;
@@ -9,17 +12,20 @@ use connectbot_shared::protos::control;
 
 use super::world::{self, SharedWorld};
 
+/// The control server.
 pub struct Server {
     world: SharedWorld,
 }
 
 impl Server {
+    /// Create a new control server
     pub fn new(world: world::SharedWorld) -> Server {
         Server {
             world: world,
         }
     }
 
+    /// Create a future that handles a new control connection
     pub fn handle_control_connection(&self, conn: TcpStream) -> impl Future<Item=(), Error=std::io::Error> {
         // Process socket here.
         let codec: Codec<control::ServerMessage, control::ClientMessage> = Codec::new();
@@ -42,6 +48,7 @@ impl Server {
 
         stream.for_each(move |mut message| -> Box<dyn Future<Item=(), Error=std::io::Error> + Send> {
             if message.has_clients_request() {
+                // Return the full list of clients and their statuses.
                 let mut clients = Vec::new();
                 {
                     let world = world.read().unwrap();

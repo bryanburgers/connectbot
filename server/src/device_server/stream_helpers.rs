@@ -35,8 +35,6 @@ impl<S1, S2> Stream for PrimarySecondaryStream<S1, S2>
     type Error = S1::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        use futures::Async;
-
         loop {
             match self.primary.poll() {
                 Ok(Async::Ready(None)) => {
@@ -117,6 +115,7 @@ impl<S> CancelableStream<S>
 }
 
 impl CancelHandle {
+    /// Cancel the stream.
     pub fn cancel(self) -> Result<(), ()>{
         self.sender.send(())
     }

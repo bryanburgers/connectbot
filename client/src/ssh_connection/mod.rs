@@ -16,20 +16,34 @@ use self::connect::Connect;
 mod disconnect;
 use self::disconnect::Disconnect;
 
+/// Information about an SSH connection that we need to establish.
 #[derive(Debug, Clone)]
 pub struct SshConnectionSettings {
+    /// A unique identifier about the SSH connection. We use this to start/stop an active
+    /// connection, and to name some of the resources we create for the connection.
     pub id: String,
+    /// The host to connect to.
     pub host: String,
+    /// The username to use when connecting.
     pub username: String,
+    /// The port to connect to.
     pub port: u16,
+    /// Which host we need to forward. When establishing an SSH connection, we either forward a
+    /// local port or a port from another address on the device's local network.
     pub forward_host: String,
+    /// Which port we need to forward.
     pub forward_port: u16,
+    /// The port on the server that we establish the tunnel to.
     pub remote_port: u16,
+    /// Whether or not to prefix the forward string with a `:` which implies that we want to expose
+    /// the tunnel publicly.
     pub gateway_port: bool,
+    /// The private key that the server sent down for us to connect with.
     pub private_key: String,
 }
 
 impl SshConnectionSettings {
+    /// The name of the private key file we create, based on the ID of the connection.
     pub fn private_key_file(&self) -> String {
         format!("/tmp/connectbot-sshkey-{}", self.id)
     }

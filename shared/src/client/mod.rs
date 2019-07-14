@@ -1,3 +1,6 @@
+//! A client that can talk to the server to get information from the server or to tell the server
+//! to send messages to the client.
+
 use std;
 use futures::prelude::*;
 
@@ -8,19 +11,25 @@ mod request_response_future;
 
 use self::request_response_future::RequestResponseFuture;
 
+/// A client that can talk to the server to get information from the server or to tell the server
+/// to send messages to the client.
 #[derive(Debug)]
 pub struct Client {
     addr: String,
 }
 
-// For now, every request will establish a new TCP connection with the server, and then 
+// For now, every request will establish a new TCP connection with the server, send a message, and
+// wait for the response. You can imagine a future where we keep a connection open for a while if
+// there is more communcation that happens with the server, but we're not doing that right now.
 impl Client {
+    /// Create a new client connecting to the given address.
     pub fn new(addr: &str) -> Client {
         Client {
             addr: addr.to_string(),
         }
     }
 
+    /// Get a list of clients that the server knows about.
     pub fn get_clients(&self) -> GetStateFuture {
         let mut message = protos::control::ClientMessage::new();
         let clients_request = protos::control::ClientsRequest::new();
@@ -32,6 +41,7 @@ impl Client {
         }
     }
 
+    /// Tell the server to establish an SSH connection to a specific device.
     pub fn connect_device(&self, device_id: &str, forward_host: &str, port: u16) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut ssh_connection = protos::control::SshConnection::new();
@@ -48,6 +58,7 @@ impl Client {
             .map(|mut response| response.take_ssh_connection_response())
     }
 
+    /// Tell the server to disconnect and stop establishing a specific SSH connection.
     pub fn disconnect_connection(&self, device_id: &str, connection_id: &str) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut ssh_connection = protos::control::SshConnection::new();
@@ -62,6 +73,7 @@ impl Client {
             .map(|mut response| response.take_ssh_connection_response())
     }
 
+    /// Tell the server to extend a specific SSH connection.
     pub fn extend_connection(&self, device_id: &str, connection_id: &str) -> impl Future<Item=protos::control::SshConnectionResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut ssh_connection = protos::control::SshConnection::new();
@@ -76,6 +88,8 @@ impl Client {
             .map(|mut response| response.take_ssh_connection_response())
     }
 
+    /// Tell the server to add a new device to the server, even though the server has not seen the
+    /// device.
     pub fn create_device(&self, device_id: &str) -> impl Future<Item=protos::control::CreateDeviceResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut create_device = protos::control::CreateDevice::new();
@@ -87,6 +101,8 @@ impl Client {
             .map(|mut response| response.take_create_device_response())
     }
 
+    /// Tell the server to remove a device from its list. Note that if the device checks in again,
+    /// it will be re-added.
     pub fn remove_device(&self, device_id: &str) -> impl Future<Item=protos::control::RemoveDeviceResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut remove_device = protos::control::RemoveDevice::new();
@@ -98,6 +114,7 @@ impl Client {
             .map(|mut response| response.take_remove_device_response())
     }
 
+    /// Tell the server to change the name of a device.
     pub fn set_name(&self, device_id: &str, name: &str) -> impl Future<Item=protos::control::SetNameResponse, Error=std::io::Error> {
         let mut message = protos::control::ClientMessage::new();
         let mut set_name = protos::control::SetName::new();
@@ -111,6 +128,7 @@ impl Client {
     }
 }
 
+/// A future that resolves to a list of clients and their states.
 pub struct GetStateFuture {
     inner: RequestResponseFuture,
 }
@@ -130,25 +148,3 @@ impl Future for GetStateFuture {
         }
     }
 }
-
-/*
-impl Future for SetResultFuture {
-    type Item = Result<(), String>;
-    type Error = std::io::Error;
-
-    fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        match self.inner.poll()? {
-            Async::NotReady => Ok(Async::NotReady),
-            Async::Ready(message) => {
-                let response = message.get_response();
-                let result = match response.get_result() {
-                    protos::ResponseResult::SUCCESS => Ok(()),
-                    protos::ResponseResult::ERROR => Err(response.get_error_message().into()),
-                    _ => Err("Response did not include a result".to_string()),
-                };
-                Ok(Async::Ready(result))
-            }
-        }
-    }
-}
-*/

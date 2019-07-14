@@ -2,8 +2,12 @@ syntax = "proto3";
 
 package control;
 
+// A message from the client to the server
 message ClientMessage {
+  // An ID for this message that is unique to the session
   uint32 message_id = 1;
+  // IF this message is in response to a server's message, set this to the
+  // server message's message_id.
   uint32 in_response_to = 2;
   oneof msg {
     ClientsRequest clients_request = 3;
@@ -14,8 +18,12 @@ message ClientMessage {
   }
 }
 
+// A message from the server to the client
 message ServerMessage {
+  // An ID for this message that is unique to the session
   uint32 message_id = 1;
+  // IF this message is in response to a client's message, set this to the
+  // client message's message_id.
   uint32 in_response_to = 2;
   oneof msg {
     ClientsResponse clients_response = 3;
@@ -26,8 +34,10 @@ message ServerMessage {
   }
 }
 
+// Request the list of known clients
 message ClientsRequest {}
 
+// Respond with the list of known clients
 message ClientsResponse {
   message Client {
     // The ID of the client.
@@ -95,6 +105,7 @@ message ClientsResponse {
   repeated Client clients = 1;
 }
 
+// Request a change in SSH
 message SshConnection {
   // Enable an SSH connection. This is idempotent: the server can send this as
   // frequently as it likes, and the client must be able to handle it.
@@ -127,6 +138,7 @@ message SshConnection {
   }
 }
 
+// Respond to a request for a change in SSH
 message SshConnectionResponse {
   enum Status {
     UNKNOWN_STATUS = 0;
@@ -142,10 +154,12 @@ message SshConnectionResponse {
   uint32 remote_port = 3;
 }
 
+// Request that a device gets created
 message CreateDevice {
   string device_id = 1;
 }
 
+// Response to a request that a device gets created
 message CreateDeviceResponse {
   enum Response {
     UNKNOWN_RESPONSE = 0;
@@ -156,10 +170,12 @@ message CreateDeviceResponse {
   Response response = 1;
 }
 
+// Request that a device gets removed
 message RemoveDevice {
   string device_id = 1;
 }
 
+// Response to a request that a device gets removed
 message RemoveDeviceResponse {
   enum Response {
     UNKNOWN_RESPONSE = 0;
@@ -171,11 +187,13 @@ message RemoveDeviceResponse {
   Response response = 1;
 }
 
+// Set the name of a device
 message SetName {
   string device_id = 1;
   string name = 2;
 }
 
+// Respond to the set name request
 message SetNameResponse {
   enum Status {
     UNKNOWN_RESPONSE = 0;

@@ -62,6 +62,7 @@ pub struct ClientConnectionHandle {
 }
 
 impl ClientConnectionHandle {
+    /// Disconnect a client
     pub fn disconnect(&self) -> impl Future<Item=(), Error=()> {
         self.sender.clone().send(BackchannelMessage::Disconnect)
             .then(|result| {
@@ -111,6 +112,7 @@ impl ClientConnectionHandle {
         }
     }
 
+    /// Get the ID of the connection
     pub fn get_id(&self) -> usize {
         self.id
     }
@@ -187,14 +189,19 @@ impl ClientConnection {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to send ssh disconnect: {}", e)))
     }
 
+    /// Handle what happens when when receive a message from a client
     fn on_client_message(mut self, mut message: device::ClientMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         if !message.has_ping() && !message.has_pong() {
+            // Log it! (Unless it's from a ping or a pong, then don't. Too noisy.)
             println!("↑ {:4}: {:?}", &self.id, message);
         }
 
+        // Keep track of when the last message was received. We use this when calculating when a
+        // device was online and when it was offline.
         self.last_message = Some(Utc::now());
 
         if message.has_ping() {
+            // If this is a ping, send back a pong. This keeps the connection alive.
             let pong = device::Pong::new();
             let mut message = device::ServerMessage::new();
             message.set_pong(pong);
@@ -204,24 +211,34 @@ impl ClientConnection {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
 
             return Box::new(f);
-            // let r : Box<dyn Future<Item=Self, Error=std::io::Error>> = Box::new(f);
-            // return r
         }
 
         if message.has_initialize() {
+            // Oh goody! The client is telling us about itself.
             let mut initialize = message.take_initialize();
             let device_id = initialize.take_id().to_string();
 
+            // Keep track of which device this connection claims to be.
             self.device_id = Some(device_id.clone());
 
+            // We only want to have one active connection for any given device. So if there is
+            // already an existing connection, disconnect it. This happens frequently when
+            // something happens to the TCP connection and we never get the RST that tells us it is
+            // disconnected. But then the client retries and that gets through.
+            //
+            // Also, having a single active connection makes life easier when we try to send
+            // commands to the device: we only need to send the command down a single network pipe.
             let previous_connection = {
                 let mut world = self.world.write().unwrap();
                 world.connect_device(&device_id, self.get_handle(), &self.address, Utc::now())
             };
             if let Some(previous_connection) = previous_connection {
+                // We DO have a previous connection, so disconnect it.
                 tokio::spawn(previous_connection.disconnect());
             }
 
+            // Are there any SSH forwards that are already defined for this device? Let the device
+            // know immediately.
             let forwards: Vec<world::SshForwardData> = {
                 let world = self.world.read().unwrap();
                 let device = world.devices.get(&device_id).unwrap();
@@ -247,7 +264,8 @@ impl ClientConnection {
         }
 
         // After this point, we want to assume that any message we receive is from an authorized
-        // client. If it's not, well...
+        // client. If it's not, ignore the message. Maybe the client will still initialize.
+        // Crossing our fingers! The other option would be to disconnect here, but let's be nice.
         if self.device_id.is_none() {
             println!("Ignoring message from non-initialized client");
             return Box::new(futures::future::ok(self));
@@ -256,6 +274,7 @@ impl ClientConnection {
         let device_id = self.device_id.as_ref().unwrap().clone();
 
         if message.has_ssh_status() {
+            // The client is telling us about an SSH connection it knows about.
             let ssh_status = message.take_ssh_status();
             let connection_id = ssh_status.get_id();
             let state = ssh_status.get_state();
@@ -294,39 +313,11 @@ impl ClientConnection {
             }
         }
 
-        /*
-        if message.has_clients_request() {
-            let clients_response = control::ClientsResponse::new();
-            let mut response = control::ServerMessage::new();
-            response.set_clients_response(clients_response);
-            response.set_in_response_to(message.get_message_id());
-
-            /*
-            return tx.clone().send(response)
-                .map(|_| ())
-                .map_err(|_| ());
-                */
-
-            let f = tx.clone().send(response)
-                .map(|_| ())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)));
-                // .map_err(|_| ());
-
-            return Box::new(f);
-
-                /*
-            let f = tx.clone().send(response)
-                .map(|_| ())
-                .map_err(|_| ());
-            tokio::spawn(f);
-            */
-        }
-        */
-
-        // message_handler::handle_message(message, tx.clone(), new_state.clone())
         Box::new(futures::future::ok(self))
     }
 
+    /// Handle what happens when no messages have been received on this connection for a while. By
+    /// sending a ping.
     fn on_timeout(self) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         let ping = device::Ping::new();
         let mut response = device::ServerMessage::new();
@@ -339,6 +330,9 @@ impl ClientConnection {
         Box::new(f)
     }
 
+    /// A backchannel message is a message that comes to this connection, but not from the
+    /// connection itself. So these are things like the control channel telling us to disconnect,
+    /// the control channel telling us to do something with SSH, etc.
     fn on_backchannel_message(mut self, message: BackchannelMessage) -> Box<dyn Future<Item=Self, Error=std::io::Error> + Send> {
         println!("! {:4}: Received backchannel message {:?}", &self.id, message);
 
@@ -385,6 +379,7 @@ impl ClientConnection {
         }
     }
 
+    /// Handle what happens when the remote client disconnects.
     fn on_disconnect(self) -> impl Future<Item=(), Error=std::io::Error> {
         let client_id = self.id;
         let world = self.world.clone();
@@ -461,12 +456,14 @@ impl ClientConnection {
     }
 }
 
-// A holder type for when we combine backchannel messages and client messages into the same stream.
+/// A holder type for when we combine backchannel messages and client messages into the same
+/// stream.
 enum ClientBackchannelCombinedMessage {
     Backchannel(BackchannelMessage),
     ClientMessage(TimedConnectionItem<device::ClientMessage>),
 }
 
+/// The type of message that a backchannel can send to this connection.
 #[derive(Debug)]
 enum BackchannelMessage {
     Disconnect,

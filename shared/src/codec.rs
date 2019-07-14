@@ -1,3 +1,5 @@
+//! A tokio_io::codec that is a stream of protocol buffers prefixed by a 4-byte length.
+
 use std::io;
 use std::io::Cursor;
 use std::marker::PhantomData;
@@ -5,12 +7,15 @@ use bytes::{BytesMut, Buf, BufMut};
 use tokio_io::codec::{Decoder, Encoder};
 use protobuf;
 
+/// A codec type where each message (both encoded and decoded) is a protocol buffer, prefixed by a
+/// 4-byte length.
 pub struct Codec<E, D> {
     decode_type: PhantomData<D>,
     encode_type: PhantomData<E>,
 }
 
 impl<E, D> Codec<E, D> {
+    /// Create a new codec.
     pub fn new() -> Codec<E, D> {
         Codec {
             decode_type: PhantomData,

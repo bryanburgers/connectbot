@@ -50,7 +50,7 @@ impl World {
         let connection_history_cutoff = now - Duration::days(2);
         let forwards_cutoff = now - Duration::hours(1);
 
-        for mut device in self.devices.values_mut() {
+        for device in self.devices.values_mut() {
             let active_connection = device.active_connection.clone();
             device.connection_history.cleanup(connection_history_cutoff);
             device.ssh_forwards.cleanup(now, forwards_cutoff, active_connection);

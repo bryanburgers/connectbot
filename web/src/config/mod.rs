@@ -5,11 +5,14 @@ use std::io::Read;
 use toml;
 use tower_web::{Serialize, Deserialize};
 
+/// The structure that represents the configuration toml file.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ApplicationConfig {
+    /// The address to listen on
     pub address: String,
+    /// The address to connect to the server on
     pub control_address: String,
-    pub assets: Assets,
+    /// Where to find the .hbs template files
     pub templates: Templates,
 }
 
@@ -18,7 +21,6 @@ impl Default for ApplicationConfig {
         ApplicationConfig {
             address: "[::]:8080".to_string(),
             control_address: "[::1]:12345".to_string(),
-            assets: Default::default(),
             templates: Default::default(),
         }
     }
@@ -41,28 +43,17 @@ impl ApplicationConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Assets {
-    pub path: String,
-}
-
-impl Default for Assets {
-    fn default() -> Self {
-        Assets {
-            path: "/var/apps/connectbot/assets".to_string(),
-        }
-    }
-}
-
+/// Configuration information about web templates
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Templates {
+    /// The path where the templates are found
     pub path: String,
 }
 
 impl Default for Templates {
     fn default() -> Self {
         Templates {
-            path: "/var/apps/connectbot/templates".to_string(),
+            path: "web/templates".to_string(),
         }
     }
 }

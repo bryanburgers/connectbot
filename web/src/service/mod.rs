@@ -1,3 +1,5 @@
+//! The routes and implementations of the routes of the webserver
+
 use connectbot_shared::client::Client;
 use connectbot_shared::protos::control;
 use http;
@@ -20,6 +22,7 @@ use self::device::Device;
 /// This type will be part of the web service as a resource.
 #[derive(Clone, Debug)]
 pub struct ConnectBotWeb {
+    /// A reference to the Client that connects to the Server's control port
     client: Arc<Client>,
 }
 
@@ -31,16 +34,19 @@ impl ConnectBotWeb {
     }
 }
 
+/// Information used by the index.hbs template
 #[derive(Debug, Response)]
 struct IndexResponse {
     test: &'static str,
 }
 
+/// Information used by the device.hbs template
 #[derive(Debug, Response)]
 struct DeviceResponse {
     device: Device,
 }
 
+/// The devices.json output
 #[derive(Response, Debug)]
 struct DevicesResponse {
     devices: Vec<Device>,
@@ -56,6 +62,7 @@ impl From<control::ClientsResponse> for DevicesResponse {
     }
 }
 
+/// Post data for the create connection route
 #[derive(Extract, Debug)]
 struct CreateConnection {
     host: String,
@@ -68,6 +75,7 @@ impl_web! {
         #[get("/")]
         #[content_type("html")]
         #[web(template = "index")]
+        /// The homepage
         fn index(&self) -> Result<IndexResponse, ()> {
             let resp = IndexResponse {
                 test: "test",
@@ -78,6 +86,7 @@ impl_web! {
         #[get("/d/:device_id")]
         #[content_type("html")]
         #[web(template = "device")]
+        /// A page for a single device
         fn device(&self, device_id: String) -> impl Future<Item=DeviceResponse, Error=std::io::Error> + Send {
             self.client.get_clients().and_then(move |devices| {
                 let devices_response: DevicesResponse = devices.into();
@@ -97,6 +106,7 @@ impl_web! {
 
         #[get("/devices.json")]
         #[content_type("json")]
+        /// The JSON response for all of the devices. This is polled regularly from the homepage.
         fn devices_json(&self) -> impl Future<Item=DevicesResponse, Error=std::io::Error> + Send {
             self.client.get_clients().and_then(|devices| {
                 let devices = devices.into();
@@ -106,12 +116,14 @@ impl_web! {
 
         #[get("/d/:device_id/json")]
         #[content_type("json")]
+        /// The JSON response for a single device. This is polled regularly from a device page.
         fn device_json(&self, device_id: String) -> impl Future<Item=DeviceResponse, Error=std::io::Error> + Send {
             // For now, this is the same exact response as we hand to the template.
             self.device(device_id)
         }
 
         #[post("/d/:device_id/connections")]
+        /// Create a new connection
         fn post_connections(&self, device_id: String, body: CreateConnection) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
             let host = match body.host.as_ref() {
                 "remote" => body.host_value,
@@ -129,6 +141,7 @@ impl_web! {
         }
 
         #[post("/d/:device_id/connections/:connection_id/delete")]
+        /// Delete an existing connection
         fn delete_connection(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
             self.client.disconnect_connection(&device_id, &connection_id).and_then(move |_| {
                 let response = http::Response::builder()
@@ -142,6 +155,7 @@ impl_web! {
         }
 
         #[post("/d/:device_id/connections/:connection_id/extend")]
+        /// Extend an existing connection
         fn extend_connection(&self, device_id: String, connection_id: String) -> impl Future<Item=http::Response<&'static str>, Error=std::io::Error> + Send {
             self.client.extend_connection(&device_id, &connection_id).and_then(move |_| {
                 let response = http::Response::builder()

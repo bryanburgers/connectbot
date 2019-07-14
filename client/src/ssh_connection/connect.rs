@@ -32,9 +32,13 @@ type WriteKeyFuture = Box<dyn Future<Item=(), Error=String> + Send>;
 
 /// Internal connection data for the Connect future.
 enum ConnectData {
+    /// Initial state.
     None,
+    /// Run the command to check whether a connection is already active.
     CheckFuture(CommandFuture<bool>),
+    /// Write the SSH private key to a file so it can be used in the connection future.
     WriteKeyFuture(WriteKeyFuture),
+    /// Run the command to establish the connection.
     ConnectFuture(CommandFuture<bool>),
 }
 

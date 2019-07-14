@@ -2,12 +2,18 @@ use chrono::{TimeZone, Utc};
 use connectbot_shared::protos::control;
 use serde_derive::Serialize;
 
+/// Information about a single device
 #[derive(Serialize, Debug)]
 pub struct Device {
+    /// The unique ID of the device
     pub id: String,
+    /// A user-specified name of the device
     pub name: String,
+    /// The IP address (either IPv4 or IPv6) of the device
     pub address: Option<String>,
+    /// A list of known connections (SSH port forwards)
     pub connections: Vec<DeviceConnection>,
+    /// The history of when the device has been connected and disconnected
     pub connection_history: Vec<DeviceHistoryItem>,
 }
 
@@ -43,10 +49,15 @@ impl From<control::ClientsResponse_Client> for Device {
     }
 }
 
+/// Information about when a device was connected
 #[derive(Serialize, Debug)]
 pub struct DeviceHistoryItem {
+    /// The time at which the device was connected. Note that this is a string because this
+    /// structure is used to serialize to JSON, so we don't need it stored as a date.
     pub connected_at: String,
+    /// The time at which the device last sent a message to the server.
     pub last_message: Option<String>,
+    /// The IP address of this particular connection.
     pub address: String,
 }
 
@@ -79,19 +90,30 @@ impl From<control::ClientsResponse_ConnectionHistoryItem> for DeviceHistoryItem 
     }
 }
 
+/// Information about an SSH connection
 #[derive(Serialize, Debug)]
 pub struct DeviceConnection {
+    /// The unique ID of the connection itself
     pub id: String,
+    /// The state of the connection, according to the device
     pub client_state: DeviceConnectionClientState,
+    /// Whether the connection is currently active or inactive
     pub active_state: DeviceConnectionActiveState,
+    /// The port allocated to this connection
     pub remote_port: u16,
+    /// The port on the client (or the device near the client) that is being forwarded
     pub forward_port: u16,
+    /// The host on the client network that is being forwarded
     pub forward_host: String,
+    /// Whether the connection is an HTTP connection
     pub is_http: bool,
+    /// Whether the connection is a reverse SSH connection
     pub is_ssh: bool,
+    /// The time at which the connection will expire
     pub active_until: Option<String>,
 }
 
+/// The state of the connection, according to the device.
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceConnectionClientState {
@@ -103,6 +125,7 @@ pub enum DeviceConnectionClientState {
     Failed,
 }
 
+/// Information about whether the connection is currently active or not.
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceConnectionActiveState {

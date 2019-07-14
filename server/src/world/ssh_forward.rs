@@ -155,6 +155,9 @@ impl SshForwards {
         success
     }
 
+    /// All SSH port forwards are originally set up for a 24-hour period. (This way, we eventually
+    /// disconnect even if somebody forgets to hit the "disconnect" button.) Extend extends for
+    /// another 24-hour period (up to a maximum of 7*24 hours from right now.
     pub fn extend(&mut self, id: &str) -> bool {
         let mut success = false;
         let max = Utc::now() + Duration::days(7);
@@ -172,6 +175,7 @@ impl SshForwards {
         success
     }
 
+    /// Cleanup stale information about port forwards.
     pub fn cleanup(&mut self, now: DateTime<Utc>, cutoff: DateTime<Utc>, active_connection: Option<ClientConnectionHandle>) {
         for item in self.forwards.iter_mut() {
             match item.server_state {

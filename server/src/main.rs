@@ -1,3 +1,5 @@
+///! The component that runs on the server and listens for connections from the remote clients.
+
 extern crate bytes;
 extern crate clap;
 extern crate chrono;
@@ -46,11 +48,11 @@ use tokio_rustls::{
 };
 
 fn load_certs(path: &str) -> Vec<Certificate> {
-    certs(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+    certs(&mut BufReader::new(File::open(path).expect("Failed to open cert"))).expect("Failed to read cert")
 }
 
 fn load_keys(path: &str) -> Vec<PrivateKey> {
-    pkcs8_private_keys(&mut BufReader::new(File::open(path).unwrap())).unwrap()
+    pkcs8_private_keys(&mut BufReader::new(File::open(path).expect("Failed to open key"))).expect("Failed to read key")
 }
 
 fn main() {
@@ -96,6 +98,7 @@ fn main() {
     let control_server = control_server::Server::new(world.clone());
     let device_server = device_server::Server::new(world.clone(), config.clone());
 
+    // Create a future that hands all of the work the device server does.
     let device_server_future = {
         let addr = &config.address;
         let socket_addr = addr.parse().expect("address must be a valid socket address");
@@ -119,6 +122,7 @@ fn main() {
             .map(|_server| ())
     };
 
+    // Create a future that hands all of the work the control server does.
     let control_server_future = {
         let addr = &config.control_address;
         let socket_addr = addr.parse().expect("control_address must be a valid socket address");
@@ -137,8 +141,8 @@ fn main() {
         future
     };
 
+    // Create a future that cleans up stale data on a regular schedule.
     let cleanup_future = {
-        let _world = world.clone();
         Interval::new_interval(Duration::from_secs(30)).for_each(move |_| {
             let mut world = world.write().unwrap();
 
