@@ -1,14 +1,12 @@
 use super::CommandFuture;
 use super::SshConnectionSettings;
-
-use std;
+use futures::future::poll_fn;
+use futures::Async;
+use futures::Future;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use ::std::process::{Command, Stdio};
-use ::futures::Future;
-use ::futures::Async;
-use ::futures::future::poll_fn;
-use ::tokio_threadpool::blocking;
+use std::process::{Command, Stdio};
+use tokio_threadpool::blocking;
 
 /// A future that attempts to establish an ssh connection
 ///
@@ -28,7 +26,7 @@ impl Connect {
     }
 }
 
-type WriteKeyFuture = Box<dyn Future<Item=(), Error=String> + Send>;
+type WriteKeyFuture = Box<dyn Future<Item = (), Error = String> + Send>;
 
 /// Internal connection data for the Connect future.
 enum ConnectData {
@@ -47,20 +45,22 @@ impl ConnectData {
     fn new_check(id: String) -> ConnectData {
         let f = poll_fn(move || {
             blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-O",
-                                         "check",
-                                         "-S",
-                                         &format!("/tmp/connectbot-ssh-{}", id),
-                                         "_@localhost",
-                ])
+                Command::new("ssh")
+                    .args(&[
+                        "-O",
+                        "check",
+                        "-S",
+                        &format!("/tmp/connectbot-ssh-{}", id),
+                        "_@localhost",
+                    ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .status()
                     .unwrap()
                     .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
+            })
+            .map_err(|_| panic!("the threadpool shut down"))
         });
 
         ConnectData::CheckFuture(Box::new(f))
@@ -70,10 +70,7 @@ impl ConnectData {
         let f = poll_fn(move || {
             blocking(|| {
                 let mut open_options = std::fs::OpenOptions::new();
-                open_options
-                    .write(true)
-                    .truncate(true)
-                    .create(true);
+                open_options.write(true).truncate(true).create(true);
 
                 open_options.mode(0o600);
 
@@ -84,7 +81,8 @@ impl ConnectData {
                 file.write_all(settings.private_key.as_bytes())
                     .map_err(|err| println!("Failed to write file: {}", err))
                     .unwrap();
-            }).map_err(|_| panic!("the threadpool shut down"))
+            })
+            .map_err(|_| panic!("the threadpool shut down"))
         });
 
         ConnectData::WriteKeyFuture(Box::new(f))
@@ -93,35 +91,46 @@ impl ConnectData {
     /// Create a new half of a future that establishes a new connection.
     fn new_connect(settings: SshConnectionSettings) -> ConnectData {
         let f = poll_fn(move || {
-            let connection = format!("{}{}:{}:{}",
-                                     match settings.gateway_port {
-                                         true => ":",
-                                         false => "",
-                                     },
-                                     settings.remote_port,
-                                     settings.forward_host,
-                                     settings.forward_port);
+            let connection = format!(
+                "{}{}:{}:{}",
+                match settings.gateway_port {
+                    true => ":",
+                    false => "",
+                },
+                settings.remote_port,
+                settings.forward_host,
+                settings.forward_port
+            );
             blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-f",
-                                         "-N",
-                                         "-R", &connection,
-                                         "-o", "BatchMode=yes",
-                                         "-o", "StrictHostKeyChecking=no",
-                                         "-o", "UserKnownHostsFile=/dev/null",
-                                         "-i", &settings.private_key_file(),
-                                         "-M",
-                                         "-S", &format!("/tmp/connectbot-ssh-{}", settings.id),
-                                         "-p", &format!("{}", settings.port),
-                                         &format!("{}@{}", settings.username, settings.host),
-                ])
+                Command::new("ssh")
+                    .args(&[
+                        "-f",
+                        "-N",
+                        "-R",
+                        &connection,
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        "UserKnownHostsFile=/dev/null",
+                        "-i",
+                        &settings.private_key_file(),
+                        "-M",
+                        "-S",
+                        &format!("/tmp/connectbot-ssh-{}", settings.id),
+                        "-p",
+                        &format!("{}", settings.port),
+                        &format!("{}@{}", settings.username, settings.host),
+                    ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .status()
                     .unwrap()
                     .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
+            })
+            .map_err(|_| panic!("the threadpool shut down"))
         });
 
         ConnectData::ConnectFuture(Box::new(f))
@@ -138,37 +147,35 @@ impl Future for Connect {
             match val {
                 ConnectData::None => {
                     self.data = ConnectData::new_check(self.settings.id.clone());
-                },
+                }
                 ConnectData::CheckFuture(mut future) => {
                     match future.poll()? {
                         Async::Ready(result) => {
                             if result {
                                 // If the check returned true, we're already connected. So we can,
                                 // in good conscience, say that we're connected.
-                                return Ok(Async::Ready(true))
+                                return Ok(Async::Ready(true));
                             }
 
                             // If the check returned false, we're not already connected. Well,
                             // might as well get on connecting, then.
                             self.data = ConnectData::new_write_key(self.settings.clone());
-                        },
+                        }
                         Async::NotReady => {
                             self.data = ConnectData::CheckFuture(future);
 
                             return Ok(Async::NotReady);
                         }
                     }
-                },
-                ConnectData::WriteKeyFuture(mut future) => {
-                    match future.poll().map_err(|_| ())? {
-                        Async::Ready(_) => {
-                            self.data = ConnectData::new_connect(self.settings.clone());
-                        },
-                        Async::NotReady => {
-                            self.data = ConnectData::WriteKeyFuture(future);
+                }
+                ConnectData::WriteKeyFuture(mut future) => match future.poll().map_err(|_| ())? {
+                    Async::Ready(_) => {
+                        self.data = ConnectData::new_connect(self.settings.clone());
+                    }
+                    Async::NotReady => {
+                        self.data = ConnectData::WriteKeyFuture(future);
 
-                            return Ok(Async::NotReady);
-                        }
+                        return Ok(Async::NotReady);
                     }
                 },
                 ConnectData::ConnectFuture(mut future) => {
@@ -176,7 +183,7 @@ impl Future for Connect {
                     self.data = ConnectData::ConnectFuture(future);
 
                     return result;
-                },
+                }
             }
         }
     }
@@ -187,4 +194,3 @@ impl Drop for Connect {
         let _ = std::fs::remove_file(self.settings.private_key_file());
     }
 }
-

@@ -1,10 +1,9 @@
 use super::CommandFuture;
-
-use ::std::process::{Command, Stdio};
-use ::futures::Future;
-use ::futures::Async;
-use ::futures::future::poll_fn;
-use ::tokio_threadpool::blocking;
+use futures::future::poll_fn;
+use futures::Async;
+use futures::Future;
+use std::process::{Command, Stdio};
+use tokio_threadpool::blocking;
 
 /// A future that checks whether an ssh socket is still active
 ///
@@ -17,20 +16,22 @@ impl Check {
     pub fn new(id: String) -> Check {
         let f = poll_fn(move || {
             blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-O",
-                                         "check",
-                                         "-S",
-                                         &format!("/tmp/connectbot-ssh-{}", id),
-                                         "_@localhost",
-                ])
+                Command::new("ssh")
+                    .args(&[
+                        "-O",
+                        "check",
+                        "-S",
+                        &format!("/tmp/connectbot-ssh-{}", id),
+                        "_@localhost",
+                    ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .status()
                     .unwrap()
                     .success()
-            }).map_err(|_| panic!("the threadpool shut down"))
+            })
+            .map_err(|_| panic!("the threadpool shut down"))
         });
 
         Check {
@@ -47,4 +48,3 @@ impl Future for Check {
         self.future.poll()
     }
 }
-

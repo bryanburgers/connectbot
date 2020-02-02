@@ -2,6 +2,7 @@
 name = "connectbot-server"
 version = "0.1.0"
 authors = ["Bryan Burgers <bryan@burgers.io>"]
+edition = "2018"
 
 [dependencies]
 connectbot-shared = { version = "0.1.0", path = "../shared" }
@@ -16,6 +17,7 @@ protobuf = { version = "~2.0", features = ["with-bytes"] }
 serde = "^1.0"
 serde_derive = "^1.0"
 tokio = "^0.1.7"
+tokio-compat = "0.1"
 tokio-codec = "^0.1.0"
 tokio-io = "^0.1.7"
 tokio-threadpool = "^0.1.3"

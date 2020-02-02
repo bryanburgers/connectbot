@@ -1,20 +1,20 @@
-use ::std;
-use ::futures::stream::Stream;
-use ::futures::Future;
-use ::futures::Poll;
-use ::futures::Async;
-use ::tokio_timer::Delay;
-use ::std::time::Instant;
-use ::std::time::Duration;
-use ::std::sync::Arc;
-use ::std::sync::atomic::{AtomicBool, Ordering};
+use futures::stream::Stream;
+use futures::Async;
+use futures::Future;
+use futures::Poll;
+use std;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
+use tokio_timer::Delay;
 
 mod check;
-use self::check::Check;
+use check::Check;
 mod connect;
-use self::connect::Connect;
+use connect::Connect;
 mod disconnect;
-use self::disconnect::Disconnect;
+use disconnect::Disconnect;
 
 /// Information about an SSH connection that we need to establish.
 #[derive(Debug, Clone)]
@@ -164,96 +164,91 @@ impl Stream for SshConnection {
             match (disconnecting, state) {
                 (false, Requested) => {
                     self.state = Connecting(Connect::new(self.connection_settings.clone()));
-                    return Ok(Async::Ready(Some(SshConnectionChange::Connecting)))
-                },
-                (false, Connecting(mut delay)) => {
-                    match delay.poll().map_err(|_| ())? {
-                        Async::Ready(result) => {
-                            if result {
-                                let instant = Instant::now() + Duration::from_millis(10_000);
-                                self.failures = 0;
-                                self.state = Connected(Delay::new(instant));
-                                return Ok(Async::Ready(Some(SshConnectionChange::Connected)));
-                            }
-                            else {
-                                self.failures += 1;
-                                let instant = Instant::now() + Duration::from_millis(self.failures as u64 * 1_000);
-                                self.state = Failed(Delay::new(instant));
-                                return Ok(Async::Ready(Some(SshConnectionChange::Failed(self.failures))));
-                            }
-                        },
-                        Async::NotReady => {
-                            self.state = Connecting(delay);
-                            return Ok(Async::NotReady);
-                        }
-                    }
-                },
-                (false, Connected(mut delay)) => {
-                    match delay.poll().map_err(|_| ())? {
-                        Async::Ready(_) => {
-                            self.state = Checking(Check::new(self.connection_settings.id.clone()));
-                        },
-                        Async::NotReady => {
-                            self.state = Connected(delay);
-                            return Ok(Async::NotReady);
-                        }
-                    }
-                },
-                (false, Checking(mut future)) => {
-                    match future.poll().map_err(|_| ())? {
-                        Async::Ready(result) => {
-                            if result {
-                                self.failures = 0;
-                                let instant = Instant::now() + Duration::from_millis(10_000);
-                                self.state = Connected(Delay::new(instant));
-                            }
-                            else {
-                                self.failures += 1;
-                                let instant = Instant::now() + Duration::from_millis(self.failures as u64 * 1_000);
-                                self.state = Failed(Delay::new(instant));
-                                return Ok(Async::Ready(Some(SshConnectionChange::Failed(self.failures))));
-                            }
-                        },
-                        Async::NotReady => {
-                            self.state = Checking(future);
-                            return Ok(Async::NotReady);
-                        }
-                    }
-                },
-                (false, Failed(mut delay)) => {
-                    match delay.poll().map_err(|_| ())? {
-                        Async::Ready(_) => {
-                            self.state = Connecting(Connect::new(self.connection_settings.clone()));
-                            return Ok(Async::Ready(Some(SshConnectionChange::Connecting)));
-                        },
-                        Async::NotReady => {
-                            self.state = Failed(delay);
-                            return Ok(Async::NotReady);
-                        }
-                    }
+                    return Ok(Async::Ready(Some(SshConnectionChange::Connecting)));
                 }
-                (_, Disconnecting(mut future)) => {
-                    match future.poll().map_err(|_| ())? {
-                        Async::Ready(_) => {
-                            self.state = Disconnected;
-                            return Ok(Async::Ready(Some(SshConnectionChange::Disconnected)));
-                        },
-                        Async::NotReady => {
-                            self.state = Disconnecting(future);
-                            return Ok(Async::NotReady);
+                (false, Connecting(mut delay)) => match delay.poll().map_err(|_| ())? {
+                    Async::Ready(result) => {
+                        if result {
+                            let instant = Instant::now() + Duration::from_millis(10_000);
+                            self.failures = 0;
+                            self.state = Connected(Delay::new(instant));
+                            return Ok(Async::Ready(Some(SshConnectionChange::Connected)));
+                        } else {
+                            self.failures += 1;
+                            let instant = Instant::now()
+                                + Duration::from_millis(self.failures as u64 * 1_000);
+                            self.state = Failed(Delay::new(instant));
+                            return Ok(Async::Ready(Some(SshConnectionChange::Failed(
+                                self.failures,
+                            ))));
                         }
+                    }
+                    Async::NotReady => {
+                        self.state = Connecting(delay);
+                        return Ok(Async::NotReady);
+                    }
+                },
+                (false, Connected(mut delay)) => match delay.poll().map_err(|_| ())? {
+                    Async::Ready(_) => {
+                        self.state = Checking(Check::new(self.connection_settings.id.clone()));
+                    }
+                    Async::NotReady => {
+                        self.state = Connected(delay);
+                        return Ok(Async::NotReady);
+                    }
+                },
+                (false, Checking(mut future)) => match future.poll().map_err(|_| ())? {
+                    Async::Ready(result) => {
+                        if result {
+                            self.failures = 0;
+                            let instant = Instant::now() + Duration::from_millis(10_000);
+                            self.state = Connected(Delay::new(instant));
+                        } else {
+                            self.failures += 1;
+                            let instant = Instant::now()
+                                + Duration::from_millis(self.failures as u64 * 1_000);
+                            self.state = Failed(Delay::new(instant));
+                            return Ok(Async::Ready(Some(SshConnectionChange::Failed(
+                                self.failures,
+                            ))));
+                        }
+                    }
+                    Async::NotReady => {
+                        self.state = Checking(future);
+                        return Ok(Async::NotReady);
+                    }
+                },
+                (false, Failed(mut delay)) => match delay.poll().map_err(|_| ())? {
+                    Async::Ready(_) => {
+                        self.state = Connecting(Connect::new(self.connection_settings.clone()));
+                        return Ok(Async::Ready(Some(SshConnectionChange::Connecting)));
+                    }
+                    Async::NotReady => {
+                        self.state = Failed(delay);
+                        return Ok(Async::NotReady);
+                    }
+                },
+                (_, Disconnecting(mut future)) => match future.poll().map_err(|_| ())? {
+                    Async::Ready(_) => {
+                        self.state = Disconnected;
+                        return Ok(Async::Ready(Some(SshConnectionChange::Disconnected)));
+                    }
+                    Async::NotReady => {
+                        self.state = Disconnecting(future);
+                        return Ok(Async::NotReady);
                     }
                 },
                 (_, Disconnected) => {
                     return Ok(Async::Ready(None));
                 }
                 (true, _) => {
-                    self.state = Disconnecting(Disconnect::new(self.connection_settings.id.clone()));
+                    self.state =
+                        Disconnecting(Disconnect::new(self.connection_settings.id.clone()));
                     return Ok(Async::Ready(Some(SshConnectionChange::Disconnecting)));
-                },
+                }
             }
         }
     }
 }
 
-type CommandFuture<T> = Box<dyn Future<Item=T, Error=()> + Send>;
+type CommandFuture<T> = Box<dyn Future<Item = T, Error = ()> + Send>;

@@ -1,39 +1,17 @@
-extern crate bytes;
-extern crate clap;
-extern crate chrono;
-extern crate futures;
-extern crate protobuf;
-extern crate rand;
-// extern crate signal_hook;
-extern crate tokio;
-extern crate tokio_codec;
-extern crate tokio_dns;
-extern crate tokio_io;
-extern crate tokio_threadpool;
-extern crate tokio_timer;
-extern crate tokio_rustls;
-extern crate connectbot_shared;
-extern crate webpki_roots;
-
 mod client;
 mod server_connection;
 mod ssh_connection;
 mod ssh_manager;
 
-use clap::{Arg, App};
-
-use std::net::IpAddr;
-use connectbot_shared::protos::device;
-
+use clap::{App, Arg};
 use rand::RngCore;
-use std::io::BufReader;
-use tokio_rustls::{
-    rustls::{
-        Certificate, ClientConfig, PrivateKey,
-        internal::pemfile::{ certs, rsa_private_keys },
-    },
-};
 use std::fs::{self, File};
+use std::io::BufReader;
+use std::net::IpAddr;
+use tokio_rustls::rustls::{
+    internal::pemfile::{certs, rsa_private_keys},
+    Certificate, ClientConfig, PrivateKey,
+};
 
 fn load_certs(path: &str) -> Vec<Certificate> {
     certs(&mut BufReader::new(File::open(path).unwrap())).unwrap()
@@ -104,16 +82,19 @@ fn main() -> Result<(), std::io::Error> {
     let address = matches.value_of("host").unwrap().to_string();
     let port = matches.value_of("port").unwrap().parse().unwrap();
     let connection = if let Some(resolve) = matches.value_of("resolve") {
-        let resolve = resolve.parse()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to parse --resolve as an address"))?;
+        let resolve = resolve.parse().map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to parse --resolve as an address",
+            )
+        })?;
 
         server_connection::ConnectionDetails::AddressWithResolve {
             address: address,
             resolve: resolve,
             port: port,
         }
-    }
-    else {
+    } else {
         server_connection::ConnectionDetails::Address {
             address: address,
             port: port,
@@ -124,13 +105,17 @@ fn main() -> Result<(), std::io::Error> {
     if let Some(cafile) = matches.value_of("cafile") {
         let mut pem = BufReader::new(fs::File::open(cafile)?);
         tls_config.root_store.add_pem_file(&mut pem).unwrap();
-    }
-    else {
-        tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+    } else {
+        tls_config
+            .root_store
+            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
     }
 
     if let Some(cert) = matches.value_of("cert") {
-        tls_config.set_single_client_cert(load_certs(cert), load_keys(matches.value_of("key").unwrap()).remove(0));
+        tls_config.set_single_client_cert(
+            load_certs(cert),
+            load_keys(matches.value_of("key").unwrap()).remove(0),
+        );
     }
 
     // Sometimes, Tokio fails to initialize because a thread pool panics. The thread pool panics
@@ -139,7 +124,7 @@ fn main() -> Result<(), std::io::Error> {
     // the random number generator, so we can panic BEFORE we get to tokio::run.
     check_rng_initialized()?;
 
-    tokio::run(client::connect(id, connection, tls_config));
+    tokio_compat::run(client::connect(id, connection, tls_config));
 
     Ok(())
 

@@ -6,14 +6,11 @@ use http;
 // use connectbot_shared::state::{self, Pattern};
 use std::sync::Arc;
 use tokio::prelude::*;
-use tower_web::{Deserialize, Serialize, Extract, Response, impl_web};
+use tower_web::{impl_web, Deserialize, Extract, Response, Serialize};
 // These seem to be sub-macros that tower_web uses. Importing macros from crates is new as of Rust
 // 1.30.0, so I'm guessing tower_web will clean this up and these won't be needed in the future.
 use tower_web::{
-    derive_resource,
-    derive_resource_impl,
-    impl_web_clean_nested,
-    impl_web_clean_top_level,
+    derive_resource, derive_resource_impl, impl_web_clean_nested, impl_web_clean_top_level,
 };
 
 mod device;
@@ -56,9 +53,7 @@ impl From<control::ClientsResponse> for DevicesResponse {
     fn from(mut response: control::ClientsResponse) -> Self {
         let devices: Vec<control::ClientsResponse_Client> = response.take_clients().into();
         let devices: Vec<Device> = devices.into_iter().map(|client| client.into()).collect();
-        DevicesResponse {
-            devices,
-        }
+        DevicesResponse { devices }
     }
 }
 

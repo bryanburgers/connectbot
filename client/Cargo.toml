@@ -2,6 +2,7 @@
 name = "connectbot-client"
 version = "0.1.0"
 authors = ["Bryan Burgers <bryan@burgers.io>"]
+edition = "2018"
 
 [dependencies]
 connectbot-shared = { version = "0.1.0", path = "../shared" }
@@ -12,6 +13,7 @@ rand = "^0.5"
 futures = "^0.1"
 tokio = "^0.1.6"
 tokio-codec = "^0.1.0"
+tokio-compat = "0.1"
 tokio-io = "^0.1.6"
 tokio-threadpool = "^0.1.3"
 tokio-timer = "^0.2.3"
