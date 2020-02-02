@@ -1,8 +1,8 @@
-use std::collections::{HashMap, hash_map::Entry};
-use std::sync::{Arc, RwLock};
-use std::net::{IpAddr, SocketAddr};
-use chrono::{DateTime, Utc};
 use chrono::Duration;
+use chrono::{DateTime, Utc};
+use std::collections::{hash_map::Entry, HashMap};
+use std::net::{IpAddr, SocketAddr};
+use std::sync::{Arc, RwLock};
 
 use super::device_server::client_connection::ClientConnectionHandle;
 
@@ -11,7 +11,9 @@ use std;
 mod connection_history;
 pub use self::connection_history::{ConnectionHistory, ConnectionHistoryItem};
 mod ssh_forward;
-pub use self::ssh_forward::{SshForwards, SshForward, SshForwardData, SshForwardClientState, SshForwardServerState};
+pub use self::ssh_forward::{
+    SshForward, SshForwardClientState, SshForwardData, SshForwardServerState, SshForwards,
+};
 mod port_allocator;
 pub use self::port_allocator::RemotePort;
 use self::port_allocator::{PortAllocator, PortAllocatorSettings};
@@ -53,7 +55,9 @@ impl World {
         for device in self.devices.values_mut() {
             let active_connection = device.active_connection.clone();
             device.connection_history.cleanup(connection_history_cutoff);
-            device.ssh_forwards.cleanup(now, forwards_cutoff, active_connection);
+            device
+                .ssh_forwards
+                .cleanup(now, forwards_cutoff, active_connection);
         }
     }
 
@@ -77,21 +81,36 @@ impl World {
     ///
     /// Returns the previous connection handle, if one existed. (This makes it possible to
     /// disconnect the previous connection handle, if necessary.)
-    pub fn connect_device(&mut self, id: &str, handle: ClientConnectionHandle, address: &SocketAddr, connected_at: DateTime<Utc>) -> Option<ClientConnectionHandle> {
+    pub fn connect_device(
+        &mut self,
+        id: &str,
+        handle: ClientConnectionHandle,
+        address: &SocketAddr,
+        connected_at: DateTime<Utc>,
+    ) -> Option<ClientConnectionHandle> {
         let connection_id = handle.get_id();
         let port_allocator = self.port_allocator.clone();
-        let device = self.devices.entry(id.to_string())
-            .or_insert_with(|| {
-                Device::new(id, port_allocator)
-            });
+        let device = self
+            .devices
+            .entry(id.to_string())
+            .or_insert_with(|| Device::new(id, port_allocator));
 
-        device.connection_status = ConnectionStatus::Connected { address: address.ip() };
-        device.connection_history.connect(connection_id, connected_at, address.ip() );
+        device.connection_status = ConnectionStatus::Connected {
+            address: address.ip(),
+        };
+        device
+            .connection_history
+            .connect(connection_id, connected_at, address.ip());
         std::mem::replace(&mut device.active_connection, Some(handle))
     }
 
     /// Mark a device as disconnected
-    pub fn disconnect_device(&mut self, device_id: &str, connection_id: usize, last_message: DateTime<Utc>) {
+    pub fn disconnect_device(
+        &mut self,
+        device_id: &str,
+        connection_id: usize,
+        last_message: DateTime<Utc>,
+    ) {
         let entry = self.devices.entry(device_id.to_string());
         let entry = match entry {
             // We're disconnecting an already connected device. We definitely expect there to be an
@@ -107,15 +126,20 @@ impl World {
             // replaced by a different connection, and so we don't want to replace THAT
             // connection status with disconnected.
             if active_connection.get_id() == connection_id {
-                device.connection_status = ConnectionStatus::Disconnected { last_message: last_message };
+                device.connection_status = ConnectionStatus::Disconnected {
+                    last_message: last_message,
+                };
             }
-        }
-        else {
+        } else {
             // There is no active connection. Mark as disconnected.
-            device.connection_status = ConnectionStatus::Disconnected { last_message: last_message };
+            device.connection_status = ConnectionStatus::Disconnected {
+                last_message: last_message,
+            };
         }
         device.active_connection = None;
-        device.connection_history.disconnect(connection_id, last_message);
+        device
+            .connection_history
+            .disconnect(connection_id, last_message);
     }
 }
 

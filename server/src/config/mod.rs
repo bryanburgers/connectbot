@@ -1,7 +1,7 @@
 use std::default::Default;
-use std::path::Path;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 use toml;
 

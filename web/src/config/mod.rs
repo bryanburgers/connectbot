@@ -1,9 +1,9 @@
 use std::default::Default;
-use std::path::Path;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 use toml;
-use tower_web::{Serialize, Deserialize};
+use tower_web::{Deserialize, Serialize};
 
 /// The structure that represents the configuration toml file.
 #[derive(Serialize, Deserialize, Debug)]

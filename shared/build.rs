@@ -1,11 +1,10 @@
-
 extern crate protoc_rust;
 
 use protoc_rust::Customize;
 use std::env;
 use std::fs;
-use std::path::Path;
 use std::io::Write;
+use std::path::Path;
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -13,8 +12,7 @@ fn main() {
     if let Err(e) = fs::create_dir(&dest_path) {
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             // We're OK
-        }
-        else {
+        } else {
             panic!("Failed to create destination path {:?}: {}", dest_path, e);
         }
     }
@@ -29,7 +27,8 @@ fn main() {
             carllerche_bytes_for_string: Some(true),
             ..Default::default()
         },
-    }).expect("protoc");
+    })
+    .expect("protoc");
 
     // The only way I could find to load the message.rs correctly is to create another mod.rs with
     // a hardcoded path attribute. So create that file. This gets included from src/protos/mod.rs

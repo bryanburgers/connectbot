@@ -1,9 +1,9 @@
 use super::CommandFuture;
 
-use ::std::process::{Command, Stdio};
-use ::futures::Future;
-use ::futures::Async;
 use ::futures::future::poll_fn;
+use ::futures::Async;
+use ::futures::Future;
+use ::std::process::{Command, Stdio};
 use ::tokio_threadpool::blocking;
 
 /// A future that disconnects a ssh socket
@@ -15,13 +15,14 @@ impl Disconnect {
     pub fn new(id: String) -> Disconnect {
         let f = poll_fn(move || {
             blocking(|| {
-                Command::new("ssh").args(&[
-                                         "-O",
-                                         "exit",
-                                         "-S",
-                                         &format!("/tmp/connectbot-ssh-{}", id),
-                                         "_@localhost",
-                ])
+                Command::new("ssh")
+                    .args(&[
+                        "-O",
+                        "exit",
+                        "-S",
+                        &format!("/tmp/connectbot-ssh-{}", id),
+                        "_@localhost",
+                    ])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
@@ -29,7 +30,8 @@ impl Disconnect {
                     .unwrap();
 
                 ()
-            }).map_err(|_| panic!("the threadpool shut down"))
+            })
+            .map_err(|_| panic!("the threadpool shut down"))
         });
 
         Disconnect {

@@ -1,11 +1,11 @@
 //! A tokio_io::codec that is a stream of protocol buffers prefixed by a 4-byte length.
 
+use bytes::{Buf, BufMut, BytesMut};
+use protobuf;
 use std::io;
 use std::io::Cursor;
 use std::marker::PhantomData;
-use bytes::{BytesMut, Buf, BufMut};
 use tokio_io::codec::{Decoder, Encoder};
-use protobuf;
 
 /// A codec type where each message (both encoded and decoded) is a protocol buffer, prefixed by a
 /// 4-byte length.
@@ -66,7 +66,8 @@ impl<E: protobuf::Message, D> Encoder for Codec<E, D> {
         }
 
         {
-            let mut coded_output_stream = protobuf::CodedOutputStream::bytes(&mut buf[previous_len + 4..]);
+            let mut coded_output_stream =
+                protobuf::CodedOutputStream::bytes(&mut buf[previous_len + 4..]);
             client_message.write_to(&mut coded_output_stream)?;
         }
 
@@ -76,11 +77,11 @@ impl<E: protobuf::Message, D> Encoder for Codec<E, D> {
 
 #[cfg(test)]
 mod tests {
-    use crate::protos::device;
-    use protobuf::Message;
     use super::*;
-    use tokio_io::codec::{Decoder, Encoder};
+    use crate::protos::device;
     use bytes::BytesMut;
+    use protobuf::Message;
+    use tokio_io::codec::{Decoder, Encoder};
 
     const SHORT_MESSAGE_LEN: usize = 20;
     const LONG_MESSAGE_LEN: usize = 1699;

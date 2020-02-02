@@ -1,7 +1,7 @@
 use futures::{
-    Async, Poll, Future,
     stream::{Fuse, Stream},
-    sync::oneshot::{channel, Sender, Receiver},
+    sync::oneshot::{channel, Receiver, Sender},
+    Async, Future, Poll,
 };
 
 /// I haven't found a good way with combinators to shut down the secondary stream once the primary
@@ -15,8 +15,9 @@ pub struct PrimarySecondaryStream<S1, S2> {
 }
 
 impl<S1, S2> PrimarySecondaryStream<S1, S2>
-    where S1: Stream,
-          S2: Stream<Item = S1::Item, Error = S1::Error>
+where
+    S1: Stream,
+    S2: Stream<Item = S1::Item, Error = S1::Error>,
 {
     /// Create a new combined stream.
     pub fn new(primary: S1, secondary: S2) -> PrimarySecondaryStream<S1, S2> {
@@ -28,8 +29,9 @@ impl<S1, S2> PrimarySecondaryStream<S1, S2>
 }
 
 impl<S1, S2> Stream for PrimarySecondaryStream<S1, S2>
-    where S1: Stream,
-          S2: Stream<Item = S1::Item, Error = S1::Error>,
+where
+    S1: Stream,
+    S2: Stream<Item = S1::Item, Error = S1::Error>,
 {
     type Item = S1::Item;
     type Error = S1::Error;
@@ -39,16 +41,16 @@ impl<S1, S2> Stream for PrimarySecondaryStream<S1, S2>
             match self.primary.poll() {
                 Ok(Async::Ready(None)) => {
                     // The primary stream has ended. Return the combined stream as ended.
-                    return Ok(Async::Ready(None))
-                },
+                    return Ok(Async::Ready(None));
+                }
                 Ok(Async::Ready(some)) => {
                     // We have data. Go ahead and return it.
-                    return Ok(Async::Ready(some))
-                },
+                    return Ok(Async::Ready(some));
+                }
                 Ok(Async::NotReady) => {
                     // The primary stream is not ready. Maybe the secondary stream is. Fall
                     // through.
-                },
+                }
                 Err(e) => {
                     // An error occurred. Return it.
                     return Err(e);
@@ -60,16 +62,16 @@ impl<S1, S2> Stream for PrimarySecondaryStream<S1, S2>
                     // Primary just said it was not ready. Secondary says it's done. So we're
                     // basically in primary-only mode, so return what primary returned.
                     return Ok(Async::NotReady);
-                },
+                }
                 Ok(Async::Ready(some)) => {
                     // Primary just said it was not ready. Secondary is ready. So return
                     // secondary's data.
                     return Ok(Async::Ready(some));
-                },
+                }
                 Ok(Async::NotReady) => {
                     // Neither primary nor secondary are ready. So... not ready.
                     return Ok(Async::NotReady);
-                },
+                }
                 Err(e) => {
                     // An error occurred. Return it. Even though this isn't the primary, all errors
                     // are important.
@@ -94,7 +96,8 @@ pub struct CancelHandle {
 }
 
 impl<S> CancelableStream<S>
-    where S: Stream
+where
+    S: Stream,
 {
     /// Create a new cancelable stream.
     pub fn new(stream: S) -> (CancelableStream<S>, CancelHandle) {
@@ -106,9 +109,7 @@ impl<S> CancelableStream<S>
             receiver: receiver,
         };
 
-        let handle = CancelHandle {
-            sender: sender,
-        };
+        let handle = CancelHandle { sender: sender };
 
         (stream, handle)
     }
@@ -116,13 +117,14 @@ impl<S> CancelableStream<S>
 
 impl CancelHandle {
     /// Cancel the stream.
-    pub fn cancel(self) -> Result<(), ()>{
+    pub fn cancel(self) -> Result<(), ()> {
         self.sender.send(())
     }
 }
 
 impl<S> Stream for CancelableStream<S>
-    where S: Stream
+where
+    S: Stream,
 {
     type Item = S::Item;
     type Error = S::Error;
@@ -138,8 +140,8 @@ impl<S> Stream for CancelableStream<S>
             Ok(Async::Ready(_)) => {
                 self.canceled = true;
                 return Ok(Async::Ready(None));
-            },
-            _ => {},
+            }
+            _ => {}
         }
 
         // If we aren't canceled yet, return whatever the stream returns

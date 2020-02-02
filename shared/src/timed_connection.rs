@@ -7,9 +7,9 @@
 //! This is _fairly_ general, and could probably become more general. Except that it works for this
 //! project, so I'm stopping here for now.
 
-use std;
 use futures::{Async, Poll, Stream};
-use std::time::{Instant, Duration};
+use std;
+use std::time::{Duration, Instant};
 use tokio_timer::Interval;
 
 /// A stream that will timeout if it has not received a message from the other end of the
@@ -91,24 +91,24 @@ impl<T: Stream> Stream for TimedConnection<T> {
                 self.warning_sent = false;
                 self.stream = Some(stream);
                 return Ok(Async::Ready(Some(TimedConnectionItem::Item(item))));
-            },
+            }
             Ok(Async::Ready(None)) => {
                 // The stream ended. We're done.
                 self.stream = None;
                 self.check_interval = None;
 
                 return Ok(Async::Ready(None));
-            },
+            }
             Ok(Async::NotReady) => {
                 // Nothing was available. Fall through.
                 self.stream = Some(stream);
-            },
+            }
             Err(e) => {
                 // There was an error. Return it.
                 self.stream = None;
                 self.check_interval = None;
                 return Err(e);
-            },
+            }
         };
 
         loop {
@@ -136,19 +136,19 @@ impl<T: Stream> Stream for TimedConnection<T> {
 
                     // Nothing to do, so fall through.
                     self.check_interval = Some(check_interval);
-                },
+                }
                 Ok(Async::Ready(None)) => {
                     panic!("Interval stream unexpectedly ended!");
-                },
+                }
                 Ok(Async::NotReady) => {
                     // Nothing was available. Fall through.
 
                     self.check_interval = Some(check_interval);
                     break;
-                },
+                }
                 Err(_) => {
                     panic!("Didn't expect interval to return an error");
-                },
+                }
             };
         }
 

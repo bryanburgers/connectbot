@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 /// ever has that port at any given time.
 #[derive(Debug, Clone)]
 pub struct PortAllocator {
-    port_allocator: Arc<PrivatePortAllocator>
+    port_allocator: Arc<PrivatePortAllocator>,
 }
 
 /// Failure reasons for why we can't hand out a port
@@ -41,18 +41,20 @@ impl PortAllocator {
     /// Create a new port allocator
     pub fn new(settings: PortAllocatorSettings) -> PortAllocator {
         PortAllocator {
-            port_allocator: Arc::new(PrivatePortAllocator::new(settings))
+            port_allocator: Arc::new(PrivatePortAllocator::new(settings)),
         }
     }
 
     /// Try to allocate a single web port
     pub fn allocate_web(&self) -> Result<RemotePort, PortAllocationError> {
-        self.port_allocator.allocate(PortType::Web, self.port_allocator.clone())
+        self.port_allocator
+            .allocate(PortType::Web, self.port_allocator.clone())
     }
 
     /// Try to allocate a single other port
     pub fn allocate(&self) -> Result<RemotePort, PortAllocationError> {
-        self.port_allocator.allocate(PortType::Other, self.port_allocator.clone())
+        self.port_allocator
+            .allocate(PortType::Other, self.port_allocator.clone())
     }
 }
 
@@ -68,21 +70,33 @@ impl PrivatePortAllocator {
     /// Create a new one.
     pub fn new(settings: PortAllocatorSettings) -> PrivatePortAllocator {
         PrivatePortAllocator {
-            web_port_range: RwLock::new(ReservablePortRange::new(settings.web_start, settings.web_end)),
-            other_port_range: RwLock::new(ReservablePortRange::new(settings.other_start, settings.other_end)),
+            web_port_range: RwLock::new(ReservablePortRange::new(
+                settings.web_start,
+                settings.web_end,
+            )),
+            other_port_range: RwLock::new(ReservablePortRange::new(
+                settings.other_start,
+                settings.other_end,
+            )),
         }
     }
 
     /// Allocate a single port, if possible.
-    pub fn allocate(&self, port_type: PortType, allocator: Arc<Self>) -> Result<RemotePort, PortAllocationError> {
+    pub fn allocate(
+        &self,
+        port_type: PortType,
+        allocator: Arc<Self>,
+    ) -> Result<RemotePort, PortAllocationError> {
         let next = match port_type {
             PortType::Web => self.web_port_range.write().unwrap().take_next(),
             PortType::Other => self.other_port_range.write().unwrap().take_next(),
         };
         match next {
-            Some(port) => {
-                Ok(RemotePort { port_value: port, port_type, deallocator: allocator })
-            },
+            Some(port) => Ok(RemotePort {
+                port_value: port,
+                port_type,
+                deallocator: allocator,
+            }),
             None => Err(PortAllocationError::NoAvailablePorts),
         }
     }
@@ -91,8 +105,16 @@ impl PrivatePortAllocator {
     /// drop.
     pub fn deallocate(&self, port: &RemotePort) {
         match port.port_type {
-            PortType::Web => self.web_port_range.write().unwrap().return_port(port.port_value),
-            PortType::Other => self.other_port_range.write().unwrap().return_port(port.port_value),
+            PortType::Web => self
+                .web_port_range
+                .write()
+                .unwrap()
+                .return_port(port.port_value),
+            PortType::Other => self
+                .other_port_range
+                .write()
+                .unwrap()
+                .return_port(port.port_value),
         }
     }
 }
@@ -107,7 +129,7 @@ struct ReservablePortRange {
     /// The next port that we'll hand out
     next: usize,
     /// Which ports we have and haven't handed out
-    vec: Vec<bool>
+    vec: Vec<bool>,
 }
 
 impl ReservablePortRange {
@@ -136,7 +158,7 @@ impl ReservablePortRange {
                 self.vec[i] = true;
                 self.next = (i + 1) % size;
 
-                return Some((i as u16) + self.start)
+                return Some((i as u16) + self.start);
             }
         }
         for i in 0..original_next {
@@ -144,7 +166,7 @@ impl ReservablePortRange {
                 self.vec[i] = true;
                 self.next = (i + 1) % size;
 
-                return Some((i as u16) + self.start)
+                return Some((i as u16) + self.start);
             }
         }
 
@@ -166,7 +188,7 @@ impl ReservablePortRange {
 pub struct RemotePort {
     port_value: u16,
     port_type: PortType,
-    deallocator: Arc<PrivatePortAllocator>
+    deallocator: Arc<PrivatePortAllocator>,
 }
 
 impl Drop for RemotePort {

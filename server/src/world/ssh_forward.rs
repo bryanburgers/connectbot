@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
-use chrono::Duration;
-use uuid;
+use super::super::device_server::client_connection::ClientConnectionHandle;
 use super::port_allocator::PortAllocator;
 use super::port_allocator::RemotePort;
-use super::super::device_server::client_connection::ClientConnectionHandle;
+use chrono::Duration;
+use chrono::{DateTime, Utc};
+use uuid;
 
 /// Information about a single ssh forwarding
 #[derive(Debug)]
@@ -82,7 +82,7 @@ impl SshForwards {
     pub fn find(&self, id: &str) -> Option<&SshForward> {
         for item in self.forwards.iter() {
             if item.id == id {
-                return Some(item)
+                return Some(item);
             }
         }
 
@@ -93,7 +93,12 @@ impl SshForwards {
         self.forwards.iter()
     }
 
-    pub fn create(&mut self, forward_host: String, forward_port: u16, gateway_port: bool) -> &SshForward {
+    pub fn create(
+        &mut self,
+        forward_host: String,
+        forward_port: u16,
+        gateway_port: bool,
+    ) -> &SshForward {
         let id = format!("{}", uuid::Uuid::new_v4());
 
         // TODO: Propagate error
@@ -121,7 +126,11 @@ impl SshForwards {
 
     /// Update the current state of a client. Returns Ok(()) if the client was found, and Err(())
     /// if the client was not found.
-    pub fn update_client_state(&mut self, id: &str, client_state: SshForwardClientState) -> Result<(), ()> {
+    pub fn update_client_state(
+        &mut self,
+        id: &str,
+        client_state: SshForwardClientState,
+    ) -> Result<(), ()> {
         let mut success = false;
         for item in self.forwards.iter_mut() {
             if item.id == id {
@@ -129,8 +138,8 @@ impl SshForwards {
                 match item.client_state {
                     SshForwardClientState::Disconnected => {
                         item.remote_port = None;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
                 success = true;
                 break;
@@ -176,7 +185,12 @@ impl SshForwards {
     }
 
     /// Cleanup stale information about port forwards.
-    pub fn cleanup(&mut self, now: DateTime<Utc>, cutoff: DateTime<Utc>, active_connection: Option<ClientConnectionHandle>) {
+    pub fn cleanup(
+        &mut self,
+        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
+        active_connection: Option<ClientConnectionHandle>,
+    ) {
         for item in self.forwards.iter_mut() {
             match item.server_state {
                 SshForwardServerState::Active { until } if until < now => (),
@@ -191,11 +205,9 @@ impl SshForwards {
             }
         }
 
-        self.forwards.retain(|item| {
-            match &item.server_state {
-                SshForwardServerState::Inactive { since } if since < &cutoff => false,
-                _ => true,
-            }
+        self.forwards.retain(|item| match &item.server_state {
+            SshForwardServerState::Inactive { since } if since < &cutoff => false,
+            _ => true,
         });
     }
 }

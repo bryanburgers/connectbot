@@ -1,13 +1,13 @@
 extern crate clap;
-extern crate tokio;
 extern crate futures;
+extern crate tokio;
 extern crate tokio_codec;
 
 extern crate connectbot_shared;
 
 use clap::{App, AppSettings, Arg, SubCommand};
-use futures::Future;
 use connectbot_shared::client::Client as CommsClient;
+use futures::Future;
 
 fn main() {
     let matches = App::new("connectbot-ctrl")
@@ -105,7 +105,7 @@ fn main() {
         ("create", Some(matches)) => create(client, matches),
         ("remove", Some(matches)) => remove(client, matches),
         ("set-name", Some(matches)) => set_name(client, matches),
-        _ => {},
+        _ => {}
     }
 }
 
@@ -113,7 +113,8 @@ fn connect(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let host = matches.value_of("host").unwrap();
     let port = matches.value_of("port").unwrap().parse().unwrap();
-    let future = client.connect_device(device_id, host, port)
+    let future = client
+        .connect_device(device_id, host, port)
         .map(|response| {
             println!("{:#?}", response);
         })
@@ -125,7 +126,8 @@ fn connect(client: CommsClient, matches: &clap::ArgMatches) {
 fn disconnect(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let connection_id = matches.value_of("connection-id").unwrap();
-    let future = client.disconnect_connection(device_id, connection_id)
+    let future = client
+        .disconnect_connection(device_id, connection_id)
         .map(|response| {
             println!("{:#?}", response);
         })
@@ -137,7 +139,8 @@ fn disconnect(client: CommsClient, matches: &clap::ArgMatches) {
 fn extend(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let connection_id = matches.value_of("connection-id").unwrap();
-    let future = client.extend_connection(device_id, connection_id)
+    let future = client
+        .extend_connection(device_id, connection_id)
         .map(|response| {
             println!("{:#?}", response);
         })
@@ -147,7 +150,8 @@ fn extend(client: CommsClient, matches: &clap::ArgMatches) {
 }
 
 fn query(client: CommsClient, _matches: &clap::ArgMatches) {
-    let future = client.get_clients()
+    let future = client
+        .get_clients()
         .map(|clients| {
             println!("{:#?}", clients);
         })
@@ -158,7 +162,8 @@ fn query(client: CommsClient, _matches: &clap::ArgMatches) {
 
 fn create(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
-    let future = client.create_device(device_id)
+    let future = client
+        .create_device(device_id)
         .map(|response| {
             println!("{:#?}", response);
         })
@@ -169,7 +174,8 @@ fn create(client: CommsClient, matches: &clap::ArgMatches) {
 
 fn remove(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
-    let future = client.remove_device(device_id)
+    let future = client
+        .remove_device(device_id)
         .map(|response| {
             println!("{:#?}", response);
         })
@@ -181,7 +187,8 @@ fn remove(client: CommsClient, matches: &clap::ArgMatches) {
 fn set_name(client: CommsClient, matches: &clap::ArgMatches) {
     let device_id = matches.value_of("device").unwrap();
     let name = matches.value_of("name").unwrap();
-    let future = client.set_name(device_id, name)
+    let future = client
+        .set_name(device_id, name)
         .map(|response| {
             println!("{:#?}", response);
         })

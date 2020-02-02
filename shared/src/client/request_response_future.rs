@@ -1,6 +1,6 @@
-use std;
 use futures;
 use futures::prelude::*;
+use std;
 use tokio::net::TcpStream;
 use tokio_codec;
 use tokio_dns;
@@ -21,7 +21,7 @@ impl RequestResponseFuture {
     /// received.
     pub fn new(addr: &str, message: protos::control::ClientMessage) -> RequestResponseFuture {
         RequestResponseFuture {
-            state: RequestResponseFutureState::new(message, addr)
+            state: RequestResponseFutureState::new(message, addr),
         }
     }
 }
@@ -32,7 +32,10 @@ enum RequestResponseFutureState {
     /// Initial state
     Initial(String, protos::control::ClientMessage),
     /// Connecting to the server
-    Connecting(protos::control::ClientMessage, Box<dyn Future<Item=TcpStream, Error=std::io::Error> + Send + 'static>),
+    Connecting(
+        protos::control::ClientMessage,
+        Box<dyn Future<Item = TcpStream, Error = std::io::Error> + Send + 'static>,
+    ),
     /// Sending the request to the server
     Sending(futures::sink::Send<tokio_codec::Framed<TcpStream, ClientCodec>>),
     /// Waiting for the server to respond
@@ -54,7 +57,10 @@ impl RequestResponseFutureState {
     }
 
     /// Transition the internal state to Sending by sending the message across the stream.
-    fn send(message: protos::control::ClientMessage, stream: TcpStream) -> RequestResponseFutureState {
+    fn send(
+        message: protos::control::ClientMessage,
+        stream: TcpStream,
+    ) -> RequestResponseFutureState {
         let codec = ClientCodec::new();
         let framed = tokio_codec::Decoder::framed(codec, stream);
 
@@ -83,30 +89,30 @@ impl Future for RequestResponseFuture {
             match state {
                 Uninitialized => {
                     unreachable!("WHAT");
-                },
+                }
                 Initial(addr, msg) => {
                     // First time this future is polled. Connect.
                     self.state = RequestResponseFutureState::connect(msg, &addr[..]);
-                },
+                }
                 Connecting(msg, mut f) => {
                     match f.poll()? {
                         Async::Ready(stream) => {
                             // We're connected! Send the message.
                             self.state = RequestResponseFutureState::send(msg, stream);
-                        },
+                        }
                         Async::NotReady => {
                             // Not connected yet. Keep waiting.
                             self.state = Connecting(msg, f);
                             return Ok(Async::NotReady);
                         }
                     }
-                },
+                }
                 Sending(mut f) => {
                     match f.poll()? {
                         Async::Ready(codec) => {
                             // The message has been sent! Wait for the response.
                             self.state = RequestResponseFutureState::wait(codec);
-                        },
+                        }
                         Async::NotReady => {
                             // Still sending. Keep waiting.
                             self.state = Sending(f);
@@ -123,28 +129,29 @@ impl Future for RequestResponseFuture {
                                 if message.get_in_response_to() == 1 {
                                     // It did! Resolve the future with this message!
                                     return Ok(Async::Ready(message));
-                                }
-                                else {
+                                } else {
                                     // No. Keep waiting for a new message.
                                     self.state = RequestResponseFutureState::wait(codec);
                                 }
-                            }
-                            else {
+                            } else {
                                 // Oh, something else happened. Oops.
-                                return Err(std::io::Error::new(std::io::ErrorKind::Other, "Stream ended unexpectedly"));
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    "Stream ended unexpectedly",
+                                ));
                             }
-                        },
+                        }
                         Ok(Async::NotReady) => {
                             // Still no message. Keep waiting.
                             self.state = Waiting(f);
                             return Ok(Async::NotReady);
-                        },
+                        }
                         Err((err, _)) => {
                             // We don't need to do anything with the stream anymore, right?
                             return Err(err);
-                        },
+                        }
                     }
-                },
+                }
             }
         }
     }
